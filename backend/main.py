@@ -8,7 +8,7 @@ import datetime
 from database import engine, get_db, Base
 import models
 from mock_sensor import SyntheticSensorGenerator
-from analytics import compute_capability_profile, generate_weekly_letter
+from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -129,6 +129,19 @@ def ingest_vision_session(session: VisionSessionCreate, db: Session = Depends(ge
     
     return {"message": "Vision session logged and profile updated"}
 
+@app.get("/sessions/history/{user_id}")
+def get_session_history(user_id: str, db: Session = Depends(get_db)):
+    sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).all()
+    return [{
+        "id": s.id,
+        "timestamp": s.timestamp.isoformat(),
+        "task_type": s.task_type,
+        "rom": s.rom,
+        "movement_speed": s.movement_speed,
+        "symmetry": s.symmetry,
+        "stability": s.stability
+    } for s in sessions]
+
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
 def get_dashboard(user_id: str, db: Session = Depends(get_db)):
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
@@ -160,4 +173,12 @@ def get_weekly_letter(user_id: str, payload: dict, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="Missing API Key")
     letter = generate_weekly_letter(user_id, db, api_key)
     return {"letter": letter}
+
+@app.post("/analytics/deep-insights/{user_id}")
+def get_deep_insights(user_id: str, payload: dict, db: Session = Depends(get_db)):
+    api_key = payload.get("api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Missing API Key")
+    insights = generate_deep_insights(user_id, db, api_key)
+    return {"insights": insights}
 

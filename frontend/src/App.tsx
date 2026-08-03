@@ -87,6 +87,8 @@ function LandingPage() {
   );
 }
 
+import { HistoryPage, TimelinePage, InsightsPage, SettingsPage } from "./DummyPages";
+
 function App() {
   const [_user, setUser] = useState(null);
   useEffect(() => {
@@ -103,13 +105,10 @@ function App() {
         <Route path="/onboarding" component={Onboarding} />
         <Route path="/capture" component={CaptureEngine} />
         <Route path="/dashboard" component={Dashboard} />
-        <Route path="/coming-soon">
-          <div className="min-h-screen flex items-center justify-center flex-col gap-4">
-            <div className="text-6xl font-black text-gradient">Coming Soon</div>
-            <div className="text-muted-foreground">This feature is under construction.</div>
-            <Link href="/dashboard" className="btn btn-primary mt-4">Back to Dashboard</Link>
-          </div>
-        </Route>
+        <Route path="/history" component={HistoryPage} />
+        <Route path="/timeline" component={TimelinePage} />
+        <Route path="/insights" component={InsightsPage} />
+        <Route path="/settings" component={SettingsPage} />
         <Route>
           <div className="min-h-screen flex items-center justify-center flex-col gap-4">
             <div className="text-6xl font-black text-gradient">404</div>

@@ -21,9 +21,9 @@ const trendData = [
 
 function NavItem({ icon, label, href, active }: { icon: React.ReactNode; label: string; href: string; active?: boolean }) {
   return (
-    <Link href={href} className={`nav-link ${active ? 'active' : ''}`}>
-      <span className="text-muted-foreground">{icon}</span>
-      <span>{label}</span>
+    <Link href={href} className={`nav-link flex-col md:flex-row items-center justify-center min-w-[72px] md:min-w-0 px-1 md:px-3 py-2 ${active ? 'active' : ''}`}>
+      <span className={`mb-1 md:mb-0 ${active ? 'text-primary' : 'text-muted-foreground'}`}>{icon}</span>
+      <span className="text-[10px] md:text-sm whitespace-nowrap">{label}</span>
     </Link>
   );
 }
@@ -89,7 +89,7 @@ export default function Dashboard() {
     setLoadingLetter(true);
     try {
       const uid = auth.currentUser?.uid || "test-user";
-      const key = "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";
+      const key = "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";
       const res = await api.getWeeklyLetter(uid, key);
       setWeeklyLetter(res.letter);
     } catch (e) {
@@ -117,22 +117,22 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen bg-background text-foreground md:overflow-hidden pb-[72px] md:pb-0">
 
       {/* ── Left Sidebar (Bottom Nav on Mobile) ── */}
-      <nav className="w-full md:w-60 flex md:flex-col border-b md:border-b-0 md:border-r border-white/6 p-2 md:p-4 shrink-0 overflow-x-auto md:overflow-x-visible">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-md md:relative md:w-60 flex md:flex-col border-t md:border-t-0 md:border-r border-border p-2 md:p-4 shrink-0 shadow-[0_-4px_10px_-2px_rgba(0,0,0,0.05)] md:shadow-none h-[72px] md:h-auto overflow-x-auto md:overflow-visible">
         <div className="hidden md:flex items-center gap-2 px-2 mb-8 mt-2">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-xs font-black text-white shadow-md">PT</div>
           <span className="font-black text-lg tracking-tight">PhysioTwin</span>
         </div>
 
-        <div className="flex md:flex-col gap-1 md:space-y-1 flex-1">
-          <NavItem icon={<Activity className="w-5 h-5" />} label="Dashboard" href="/dashboard" active />
-          <NavItem icon={<Camera className="w-5 h-5" />} label="Capture" href="/capture" />
-          <NavItem icon={<History className="w-5 h-5" />} label="History" href="/coming-soon" />
-          <NavItem icon={<Clock className="w-5 h-5" />} label="Twin Timeline" href="/coming-soon" />
-          <NavItem icon={<Brain className="w-5 h-5" />} label="Insights" href="/coming-soon" />
-          <NavItem icon={<Settings className="w-5 h-5" />} label="Settings" href="/coming-soon" />
+        <div className="flex justify-between md:justify-start md:flex-col w-full md:w-auto md:space-y-1 flex-1">
+          <NavItem icon={<Activity className="w-5 h-5 md:w-5 md:h-5" />} label="Dashboard" href="/dashboard" active />
+          <NavItem icon={<Camera className="w-5 h-5 md:w-5 md:h-5" />} label="Capture" href="/capture" />
+          <NavItem icon={<History className="w-5 h-5 md:w-5 md:h-5" />} label="History" href="/history" />
+          <NavItem icon={<Clock className="w-5 h-5 md:w-5 md:h-5" />} label="Timeline" href="/timeline" />
+          <NavItem icon={<Brain className="w-5 h-5 md:w-5 md:h-5" />} label="Insights" href="/insights" />
+          <NavItem icon={<Settings className="w-5 h-5 md:w-5 md:h-5" />} label="Settings" href="/settings" />
         </div>
 
         <div className="hidden md:block mt-auto pt-4 border-t border-border">
@@ -147,7 +147,7 @@ export default function Dashboard() {
       </nav>
 
       {/* ── Main Canvas ── */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+      <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6">
 
         {/* Header */}
         <header className="flex items-center justify-between">
@@ -319,7 +319,7 @@ export default function Dashboard() {
       </main>
 
       {/* ── Right Rail ── */}
-      <aside className="w-full md:w-72 border-t md:border-t-0 md:border-l border-border flex flex-col overflow-y-auto shrink-0 bg-background z-20">
+      <aside className="w-full md:w-72 border-t md:border-t-0 md:border-l border-border flex flex-col md:overflow-y-auto shrink-0 bg-background z-20">
         {/* Weekly Letter */}
         <div className="p-5 border-b border-border">
           <div className="flex items-center justify-between mb-3">

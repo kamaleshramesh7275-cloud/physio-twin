@@ -7,9 +7,6 @@ import datetime
 
 # Mock capability scoring algorithm
 def compute_capability_profile(user_id: str, db: Session):
-    # In a real system, this would query vision_sessions and sensor_sessions
-    # Here we generate mock scores that shift slightly based on history length to simulate real baseline calculation
-    
     session_count = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).count()
     
     # Base values
@@ -19,7 +16,6 @@ def compute_capability_profile(user_id: str, db: Session):
     cardio = 78.0
     recovery = 88.0
     
-    # Simulate a deterioration in stability if session count > 3 for demo purposes
     if session_count >= 3:
         stability -= 15.0  
         
@@ -36,7 +32,6 @@ def compute_capability_profile(user_id: str, db: Session):
     db.add(profile)
     
     if session_count >= 3:
-        # Generate a mock change point
         cp = models.ChangePoint(
             user_id=user_id,
             metric_name="stability",
@@ -92,3 +87,37 @@ def generate_weekly_letter(user_id: str, db: Session, api_key: str):
     except Exception as e:
         print(f"LLM Error: {e}")
         return "Your digital twin is currently analyzing your data. Check back later for your weekly summary."
+
+def generate_deep_insights(user_id: str, db: Session, api_key: str):
+    sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).limit(10).all()
+    
+    if not sessions:
+        return "No session history found. Please record a Capture session first to get deep insights."
+
+    history_text = "\n".join([f"Date: {s.timestamp.strftime('%Y-%m-%d')}, ROM: {s.rom} degrees, Symmetry: {s.symmetry}, Speed: {s.movement_speed} reps/min" for s in sessions])
+
+    prompt = f"""
+    You are PhysioTwin, an expert biomechanics AI. Analyze the user's recent Sit-to-Stand movement history and provide a "Deep Insight" report.
+    Do NOT give medical advice. Speak directly to the user as their Digital Twin. Use markdown formatting with bolding and bullet points.
+
+    Here is the data from their last 10 sessions:
+    {history_text}
+
+    Structure your response into:
+    1. **Kinematic Trend Analysis** (What is happening to their ROM and symmetry over time?)
+    2. **Biomechanical Breakdown** (What do these numbers mean for their real-world movement?)
+    3. **Actionable Focus Areas** (Suggest 2 specific things to focus on during their next session based on the data).
+    """
+
+    try:
+        client = Groq(api_key=api_key)
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192",
+            temperature=0.4,
+            max_tokens=600
+        )
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        print(f"LLM Error: {e}")
+        return f"Error connecting to AI: {str(e)}"
