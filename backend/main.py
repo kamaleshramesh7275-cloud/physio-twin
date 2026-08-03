@@ -167,18 +167,12 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db)):
     )
 
 @app.post("/analytics/weekly-letter/{user_id}")
-def get_weekly_letter(user_id: str, payload: dict, db: Session = Depends(get_db)):
-    api_key = payload.get("api_key")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Missing API Key")
-    letter = generate_weekly_letter(user_id, db, api_key)
+def get_weekly_letter(user_id: str, db: Session = Depends(get_db)):
+    letter = generate_weekly_letter(user_id, db)
     return {"letter": letter}
 
 @app.post("/analytics/deep-insights/{user_id}")
-def get_deep_insights(user_id: str, payload: dict, db: Session = Depends(get_db)):
-    api_key = payload.get("api_key")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Missing API Key")
-    insights = generate_deep_insights(user_id, db, api_key)
+def get_deep_insights(user_id: str, db: Session = Depends(get_db)):
+    insights = generate_deep_insights(user_id, db)
     return {"insights": insights}
 

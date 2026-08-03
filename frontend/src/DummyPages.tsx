@@ -214,8 +214,7 @@ export function InsightsPage() {
     setError(null);
     try {
       const uid = auth.currentUser?.uid || "test-user";
-      const key = "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";
-      const res = await api.getDeepInsights(uid, key);
+      const res = await api.getDeepInsights(uid);
       setInsights(res.insights);
     } catch (err: any) {
       setError(err.message || "Failed to generate insights");

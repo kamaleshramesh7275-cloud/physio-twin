@@ -5,6 +5,9 @@ import models
 import statistics
 import datetime
 
+# Hardcoded API key as requested, secured on backend environment
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+
 # Mock capability scoring algorithm
 def compute_capability_profile(user_id: str, db: Session):
     session_count = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).count()
@@ -45,7 +48,7 @@ def compute_capability_profile(user_id: str, db: Session):
     db.refresh(profile)
     return profile
 
-def generate_weekly_letter(user_id: str, db: Session, api_key: str):
+def generate_weekly_letter(user_id: str, db: Session):
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
     
     if not profile:
@@ -67,7 +70,7 @@ def generate_weekly_letter(user_id: str, db: Session, api_key: str):
     """
 
     try:
-        client = Groq(api_key=api_key)
+        client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",
@@ -88,7 +91,7 @@ def generate_weekly_letter(user_id: str, db: Session, api_key: str):
         print(f"LLM Error: {e}")
         return "Your digital twin is currently analyzing your data. Check back later for your weekly summary."
 
-def generate_deep_insights(user_id: str, db: Session, api_key: str):
+def generate_deep_insights(user_id: str, db: Session):
     sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).limit(10).all()
     
     if not sessions:
@@ -110,7 +113,7 @@ def generate_deep_insights(user_id: str, db: Session, api_key: str):
     """
 
     try:
-        client = Groq(api_key=api_key)
+        client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",

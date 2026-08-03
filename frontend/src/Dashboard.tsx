@@ -76,6 +76,10 @@ export default function Dashboard() {
         const uid = auth.currentUser?.uid || "test-user";
         const res = await api.getDashboard(uid);
         setData(res);
+        
+        // Also fetch weekly letter
+        const letterRes = await api.getWeeklyLetter(uid);
+        setWeeklyLetter(letterRes.letter);
       } catch (e) {
         // fallback mock
         setData({ mobility: 85, stability: 55, quality: 92, cardio: 78, recovery: 88, reserve: 55, confidence: 'Low', change_point_alert: 'Deterioration detected in stability over last 3 sessions.' });
