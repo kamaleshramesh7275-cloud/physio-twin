@@ -75,6 +75,9 @@ class CapabilityProfile(Base):
     recovery = Column(Float)
     capability_reserve = Column(Float)
     confidence = Column(String) # 'Low' | 'Medium' | 'High'
+    zone_risks = Column(Text, nullable=True) # JSON string mapping zone_id to risk 0-100
+    trend_data = Column(Text, nullable=True) # JSON string of historical trend data
+
 
 class BaselineHistory(Base):
     __tablename__ = "baseline_history"
@@ -98,6 +101,25 @@ class ChangePoint(Base):
     detected_at = Column(DateTime, default=datetime.datetime.utcnow)
     classification = Column(String) # 'temporary' | 'persistent'
     magnitude = Column(Float)
+
+class LeaderboardEntry(Base):
+    __tablename__ = "leaderboard"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    username = Column(String)
+    score = Column(Integer)
+    rank_change = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class ExternalAppSession(Base):
+    __tablename__ = "external_app_sessions"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    app_name = Column(String) # 'Hevy', 'HealthifyMe'
+    session_data = Column(Text) # JSON string with the workout/nutrition details
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
 class TwinNote(Base):
     __tablename__ = "twin_notes"

@@ -73,7 +73,7 @@ def generate_weekly_letter(user_id: str, db: Session):
         client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             temperature=0.7,
             max_tokens=300
         )
@@ -116,7 +116,7 @@ def generate_deep_insights(user_id: str, db: Session):
         client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             temperature=0.4,
             max_tokens=600
         )
@@ -124,3 +124,76 @@ def generate_deep_insights(user_id: str, db: Session):
     except Exception as e:
         print(f"LLM Error: {e}")
         return f"Error connecting to AI: {str(e)}"
+
+class MessageInput:
+    role: str
+    content: str
+
+def chat_with_twin(user_id: str, messages_history: list[dict], db: Session):
+    profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
+    
+    stats = "No data yet."
+    if profile:
+        stats = f"Mobility: {profile.mobility}, Stability: {profile.stability}, Quality: {profile.movement_quality}, Cardio: {profile.cardiovascular_efficiency}, Recovery: {profile.recovery}, Reserve: {profile.capability_reserve}"
+        
+    system_prompt = f"""
+    You are PhysioTwin, a friendly, concise, and highly analytical digital twin of the user's physical capability.
+    The user is chatting with you. You should answer their questions based on their latest data.
+    Do NOT give medical advice. Speak directly to the user.
+    
+    User's Latest Stats:
+    {stats}
+    """
+    
+    # Prepend system prompt to the messages
+    api_messages = [{"role": "system", "content": system_prompt}]
+    for msg in messages_history:
+        api_messages.append({"role": msg["role"], "content": msg["content"]})
+        
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        chat_completion = client.chat.completions.create(
+            messages=api_messages,
+            model="llama-3.1-8b-instant",
+            temperature=0.7,
+            max_tokens=300
+        )
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        print(f"LLM Error: {e}")
+        return f"Twin is offline. Error: {str(e)}"
+
+def simulate_activity(user_id: str, activity_type: str, duration_mins: int, intensity: str, db: Session):
+    # Fetch current profile
+    profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
+    
+    if not profile:
+        return {"error": "No baseline profile available for simulation."}
+        
+    # Heuristics based on activity
+    cost = 0
+    if activity_type.lower() == "running":
+        cost = duration_mins * (0.5 if intensity == "Light" else 1.2 if intensity == "Hard" else 0.8)
+    elif activity_type.lower() == "weightlifting":
+        cost = duration_mins * (0.4 if intensity == "Light" else 1.0 if intensity == "Hard" else 0.7)
+    elif activity_type.lower() == "yoga":
+        cost = duration_mins * 0.2
+    else:
+        cost = duration_mins * 0.5
+        
+    new_reserve = max(0.0, profile.capability_reserve - cost)
+    new_recovery = max(0.0, profile.recovery - (cost * 0.5))
+    
+    # We don't save to DB because it's a "What-If" simulation
+    return {
+        "original": {
+            "reserve": profile.capability_reserve,
+            "recovery": profile.recovery
+        },
+        "simulated": {
+            "reserve": round(new_reserve, 1),
+            "recovery": round(new_recovery, 1)
+        },
+        "cost": round(cost, 1)
+    }
+
