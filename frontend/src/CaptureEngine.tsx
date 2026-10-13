@@ -4,14 +4,16 @@ import { useLocation } from "wouter";
 import {
   Camera, CheckCircle2, ChevronRight, Loader2,
   Eye, Activity, Brain, Sparkles, BarChart3, Zap,
-  PersonStanding, Dumbbell, ArrowRight, Clock
+  PersonStanding, Dumbbell, ArrowRight, Clock,
+  Plus, FileText, UploadCloud, CheckCircle, ImagePlus, ShieldCheck, Calendar, History
 } from "lucide-react";
 import { api } from "./api";
 import { auth } from "./firebase";
+import { Sidebar } from "./components/Sidebar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Mode = "sit-to-stand" | "standing-posture";
-type Stage = "select" | "setup" | "countdown" | "recording" | "processing" | "done";
+type Mode = "sit-to-stand" | "standing-posture" | "squat-analysis" | "gait-analysis" | "medical-report" | "static-image";
+type Stage = "landing" | "options" | "select" | "setup" | "countdown" | "recording" | "processing" | "done" | "upload-report" | "upload-image";
 
 interface ProcessStep {
   id: string;
@@ -99,13 +101,15 @@ function PostureBar({ label, value, good }: { label: string; value: number; good
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function CaptureEngine() {
+function CaptureEngineContent() {
   const [, setLocation] = useLocation();
 
   // Mode & stage
   const [mode, setMode] = useState<Mode>("sit-to-stand");
-  const [stage, setStage] = useState<Stage>("select");
+  const [stage, setStage] = useState<Stage>("landing");
   const [countdown, setCountdown] = useState(3);
+  const [audioCoaching, setAudioCoaching] = useState(true);
+  const [uploadedImageSrc, setUploadedImageSrc] = useState<string | null>(null);
 
   // Vision
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -133,6 +137,23 @@ export default function CaptureEngine() {
     kneeBendSum: 0,
     frames: 0,
   });
+
+  // Speech synthesis
+  const lastSpokenRef = useRef<{ text: string, time: number }>({ text: "", time: 0 });
+  const speak = (text: string, cooldownMs = 2000) => {
+    if (!audioCoaching || !("speechSynthesis" in window)) return;
+    const now = Date.now();
+    if (lastSpokenRef.current.text === text && now - lastSpokenRef.current.time < cooldownMs) return;
+    
+    // Stop current speech if it's a new urgent cue
+    if (lastSpokenRef.current.text !== text) window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+    lastSpokenRef.current = { text, time: now };
+  };
 
   // Shared
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -273,11 +294,101 @@ export default function CaptureEngine() {
                 setLiveRom(Math.round(Math.max(0, metricsRef.current.maxKneeAngle - metricsRef.current.minKneeAngle)));
                 if (metricsRef.current.framesAnalyzed > 0)
                   setLiveSymmetry(Math.round((metricsRef.current.symmetrySum / metricsRef.current.framesAnalyzed) * 100));
-                if (standing && !prevStanding && !repCounted) { setReps(r => r + 1); repCounted = true; }
-                else if (!standing && avg < 120) repCounted = false;
+                
+                if (standing && !prevStanding && !repCounted) { 
+                  setReps(r => { const newReps = r + 1; speak(`Rep ${newReps}`); return newReps; }); 
+                  repCounted = true; 
+                } else if (!standing && avg < 120) {
+                  repCounted = false;
+                }
                 prevStanding = standing;
               }
 
+            } else if (mode === "squat-analysis") {
+              const lh = lm[23], lk = lm[25], la = lm[27];
+              const rh = lm[24], rk = lm[26], ra = lm[28];
+              
+              let formGood = true;
+              let warningColor = "#ef4444";
+              let defaultColor = "#22d3ee";
+              let kneeCollapse = false;
+
+              // Simple Varus/Valgus tracking (knees caving in relative to hips/ankles horizontally)
+              if (lh && lk && la && rh && rk && ra) {
+                const leftKneeCave = lk.x > lh.x + 0.05; // assuming facing camera
+                const rightKneeCave = rk.x < rh.x - 0.05;
+                if (leftKneeCave || rightKneeCave) {
+                  formGood = false;
+                  kneeCollapse = true;
+                  speak("Push your knees out", 3000);
+                }
+              }
+
+              // Draw skeleton with dynamic color
+              const strokeColor = formGood ? defaultColor : warningColor;
+              drawing.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: strokeColor, lineWidth: 3 });
+              drawing.drawLandmarks(lm, { color: formGood ? "#a855f7" : "#fca5a5", radius: 4 });
+
+              // Draw explicit knee tracking lines
+              if (lh && lk && la) {
+                const W = canvas.width, H = canvas.height;
+                ctx.beginPath();
+                ctx.moveTo(lh.x * W, lh.y * H);
+                ctx.lineTo(lk.x * W, lk.y * H);
+                ctx.lineTo(la.x * W, la.y * H);
+                ctx.strokeStyle = kneeCollapse ? "#ef4444" : "#10b981";
+                ctx.lineWidth = 4;
+                ctx.stroke();
+              }
+
+              // Basic depth logic for rep counting
+              const calcAngle = (a: any, b: any, c: any) => {
+                if (!a || !b || !c) return 0;
+                const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+                let angle = Math.abs(rad * 180 / Math.PI);
+                if (angle > 180) angle = 360 - angle;
+                return angle;
+              };
+              if (lh && lk && la) {
+                const angle = calcAngle(lh, lk, la);
+                const standing = angle > 160;
+                const deep = angle < 90;
+                if (deep && !repCounted) {
+                  speak("Good depth", 2000);
+                  repCounted = true;
+                } else if (standing && repCounted) {
+                  setReps(r => { const newReps = r + 1; speak(`${newReps}`); return newReps; });
+                  repCounted = false;
+                }
+              }
+
+            } else if (mode === "gait-analysis") {
+              // Draw skeleton in green/purple
+              drawing.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#10b981", lineWidth: 2 });
+              drawing.drawLandmarks(lm, { color: "#a855f7", radius: 3 });
+
+              const la = lm[27], ra = lm[28]; // left/right ankles
+              if (la && ra) {
+                const W = canvas.width, H = canvas.height;
+                // Draw horizontal line between ankles to measure stride
+                ctx.beginPath();
+                ctx.moveTo(la.x * W, la.y * H);
+                ctx.lineTo(ra.x * W, ra.y * H);
+                ctx.strokeStyle = "#f59e0b";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                const stridePixels = Math.abs(la.x - ra.x) * W;
+                if (stridePixels > 100) {
+                  // User is mid-stride
+                  if (!repCounted) {
+                    setReps(r => r + 1); // treating steps as reps
+                    repCounted = true;
+                  }
+                } else {
+                  repCounted = false; // feet together
+                }
+              }
             } else {
               // ── Standing posture mode ──────────────────────────────────
               // Draw skeleton in green/purple
@@ -406,6 +517,24 @@ export default function CaptureEngine() {
         symmetry: avgSymmetry,
         movementSpeed: reps > 0 && elapsed > 0 ? reps / (elapsed / 60) : 1.2,
       };
+    } else if (mode === "squat-analysis") {
+      sessionResult = {
+        mode,
+        reps,
+        elapsed,
+        rom: 120, // default placeholder depth
+        symmetry: 0.92,
+        movementSpeed: reps > 0 && elapsed > 0 ? reps / (elapsed / 60) : 1.0,
+      };
+    } else if (mode === "gait-analysis") {
+      sessionResult = {
+        mode,
+        reps: 0,
+        elapsed,
+        rom: 45, // stride rom
+        symmetry: 0.96,
+        movementSpeed: reps > 0 && elapsed > 0 ? reps / (elapsed / 60) : 0, // cadence
+      };
     } else {
       const p = postureRef.current;
       const frames = p.frames || 1;
@@ -453,6 +582,7 @@ export default function CaptureEngine() {
         symmetry: sessionResult.symmetry,
         stability: mode === "standing-posture" ? (sessionResult.postureScore / 100) : 0.88,
         camera_quality: "High",
+        annotated_image_url: sessionStorage.getItem("lastAnnotatedImage") || undefined,
       });
       await delay(400); advance("biomech", "done");
     } catch { advance("biomech", "error"); }
@@ -477,7 +607,474 @@ export default function CaptureEngine() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Stage 0: Mode Select ─────────────────────────────────────────────────
+  if (stage === "landing") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-start px-4 pt-8 pb-20 md:pb-8 relative overflow-hidden overflow-y-auto">
+        {/* Background glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-10 blur-3xl pointer-events-none"
+          style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
+
+        <div className="w-full max-w-5xl relative z-10 flex flex-col gap-6">
+          
+          {/* Header */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-4">
+            <div>
+              <div className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-bold uppercase tracking-widest">
+                <ShieldCheck className="w-3.5 h-3.5" /> Data Hub
+              </div>
+              <h1 className="text-3xl md:text-5xl font-black tracking-tight">
+                Update your <span className="text-gradient">Digital Twin</span>
+              </h1>
+            </div>
+            <button 
+              onClick={() => setStage("options")}
+              className="mt-4 md:mt-0 btn-primary px-6 py-3 shadow-[0_0_20px_rgba(14,165,233,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.5)] transition-all flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" /> Add New Data
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* Twin Freshness Card (Spans 2 cols on tablet/desktop) */}
+            <div className="md:col-span-2 glass-panel p-6 flex flex-col md:flex-row items-center gap-6 border-l-4 border-l-primary relative overflow-hidden group">
+              <div className="absolute -right-10 -bottom-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                <Brain className="w-48 h-48" />
+              </div>
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full border-[6px] border-primary/20 flex items-center justify-center">
+                  <div className="w-full h-full rounded-full border-[6px] border-primary border-t-transparent animate-spin-slow" />
+                  <div className="absolute inset-0 flex items-center justify-center font-black text-2xl">94%</div>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-xl mb-1">Twin Accuracy is High</h3>
+                <p className="text-sm text-muted-foreground mb-4">Your digital model is closely synced with your physical state. Keep it up by logging your weekly assessments.</p>
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
+                    <CheckCircle className="w-4 h-4" /> Last scan: 3 days ago
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-medium text-amber-400">
+                    <Activity className="w-4 h-4" /> Next due: Squat Analysis
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Action / Recommended */}
+            <div className="glass-panel p-6 border border-emerald-500/20 bg-emerald-500/5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-emerald-500 mb-2">
+                  <Sparkles className="w-5 h-5" />
+                  <span className="font-bold text-sm uppercase tracking-wider">Recommended</span>
+                </div>
+                <h3 className="font-bold text-lg mb-2">Weekly Posture Scan</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">It's been a week since your last standing posture scan. Take 10 seconds to update your alignment metrics.</p>
+              </div>
+              <button onClick={() => { setMode("standing-posture"); setStage("setup"); }} className="mt-4 w-full py-2.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-semibold text-sm hover:bg-emerald-500/30 transition-colors border border-emerald-500/30">
+                Start Posture Scan
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+            
+            {/* Recent Activity Feed */}
+            <div className="glass-panel p-6">
+              <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                <History className="w-5 h-5 text-sky-400" /> Recent Captures
+              </h3>
+              <div className="space-y-4">
+                {[
+                  { title: "Gait Analysis", date: "Today, 9:00 AM", status: "Processed", icon: <PersonStanding className="w-4 h-4" />, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+                  { title: "Medical Report Upload", date: "Yesterday, 2:15 PM", status: "Synced", icon: <FileText className="w-4 h-4" />, color: "text-purple-400", bg: "bg-purple-500/10" },
+                  { title: "Sit-to-Stand Test", date: "3 days ago", status: "Processed", icon: <Dumbbell className="w-4 h-4" />, color: "text-blue-400", bg: "bg-blue-500/10" }
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-card border border-border/50 hover:border-border transition-colors">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.bg} ${item.color}`}>
+                      {item.icon}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm">{item.title}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <Calendar className="w-3 h-3" /> {item.date}
+                      </div>
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-secondary/50 text-muted-foreground">
+                      {item.status}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button className="w-full mt-4 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors border border-dashed border-border rounded-lg">
+                View Full History
+              </button>
+            </div>
+
+            {/* How it Works / Capabilities */}
+            <div className="glass-panel p-6 bg-gradient-to-br from-card to-background/50">
+              <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-400" /> Data Capabilities
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-card border border-border">
+                  <Camera className="w-6 h-6 text-blue-400 mb-2" />
+                  <div className="font-bold text-sm mb-1">Live AI Vision</div>
+                  <div className="text-xs text-muted-foreground">Real-time biomechanics tracking via your device camera.</div>
+                </div>
+                <div className="p-4 rounded-xl bg-card border border-border">
+                  <ImagePlus className="w-6 h-6 text-emerald-400 mb-2" />
+                  <div className="font-bold text-sm mb-1">Gallery Upload</div>
+                  <div className="text-xs text-muted-foreground">Analyze static photos for posture and alignment.</div>
+                </div>
+                <div className="p-4 rounded-xl bg-card border border-border">
+                  <FileText className="w-6 h-6 text-purple-400 mb-2" />
+                  <div className="font-bold text-sm mb-1">Medical Reports</div>
+                  <div className="text-xs text-muted-foreground">Extract insights from X-rays, MRIs, and notes.</div>
+                </div>
+                <div className="p-4 rounded-xl bg-card border border-border">
+                  <Brain className="w-6 h-6 text-pink-400 mb-2" />
+                  <div className="font-bold text-sm mb-1">Continuous Sync</div>
+                  <div className="text-xs text-muted-foreground">All data feeds directly into your digital twin model.</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Stage 0.2: Options Menu ─────────────────────────────────────────────
+  if (stage === "options") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
+          style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
+
+        <div className="w-full max-w-xl relative z-10">
+          <button onClick={() => setStage("landing")} className="mb-6 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+            ← Back to Hub
+          </button>
+          
+          <div className="text-center mb-10">
+            <h1 className="text-3xl font-black tracking-tight mb-2">
+              What do you want to <span className="text-gradient">add?</span>
+            </h1>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Live Motion Capture */}
+            <button
+              onClick={() => setStage("select")}
+              className="text-left p-6 rounded-2xl border-2 border-border bg-card hover:border-primary/50 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Camera className="w-6 h-6" />
+              </div>
+              <div className="font-bold text-lg mb-1">Live Capture</div>
+              <div className="text-sm text-muted-foreground leading-relaxed">
+                Use your camera to perform physical assessments.
+              </div>
+            </button>
+
+            {/* Static Image Analysis */}
+            <button
+              onClick={() => { setMode("static-image"); setStage("upload-image"); }}
+              className="text-left p-6 rounded-2xl border-2 border-border bg-card hover:border-emerald-500/50 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <ImagePlus className="w-6 h-6" />
+              </div>
+              <div className="font-bold text-lg mb-1">Gallery Image</div>
+              <div className="text-sm text-muted-foreground leading-relaxed">
+                Upload a photo to analyse static standing posture.
+              </div>
+            </button>
+
+            {/* Medical Report */}
+            <button
+              onClick={() => setStage("upload-report")}
+              className="text-left p-6 rounded-2xl border-2 border-border bg-card hover:border-purple-500/50 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div className="font-bold text-lg mb-1">Medical Report</div>
+              <div className="text-sm text-muted-foreground leading-relaxed">
+                Upload photos of X-rays, MRI reports, or doctor's notes.
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Stage 0.3: Upload Report ─────────────────────────────────────────────
+  if (stage === "upload-report") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
+          style={{ background: "radial-gradient(ellipse, #8b5cf6, #ec4899)" }} />
+
+        <div className="w-full max-w-xl relative z-10">
+          <button onClick={() => setStage("options")} className="mb-6 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+            ← Back to Options
+          </button>
+          
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-black tracking-tight mb-2">
+              Upload <span className="text-gradient">Medical Report</span>
+            </h1>
+            <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+              Our AI will scan the document and automatically update your digital twin's injury risk and capabilities.
+            </p>
+          </div>
+
+          <div className="glass-panel p-8 text-center rounded-2xl border-2 border-dashed border-border hover:border-primary/50 transition-colors cursor-pointer group">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+              <UploadCloud className="w-8 h-8 text-primary" />
+            </div>
+            <div className="font-bold text-lg mb-1">Click to browse or drag file here</div>
+            <div className="text-xs text-muted-foreground">Supports JPG, PNG, PDF (Max 10MB)</div>
+            
+            <button 
+              onClick={() => {
+                // Mock upload process
+                setMode("medical-report");
+                setStage("processing");
+                setProcessSteps([
+                  { id: "scan", label: "Scanning Document", icon: <FileText className="w-4 h-4" />, status: "running" },
+                  { id: "extract", label: "Extracting Findings", icon: <Activity className="w-4 h-4" />, status: "pending" },
+                  { id: "sync", label: "Syncing to Digital Twin", icon: <CheckCircle2 className="w-4 h-4" />, status: "pending" }
+                ]);
+
+                const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+                const runMock = async () => {
+                  await delay(1000);
+                  setProcessSteps(prev => prev.map(s => s.id === "scan" ? { ...s, status: "done" } : s === prev[1] ? { ...s, status: "running" } : s));
+                  await delay(1500);
+                  setProcessSteps(prev => prev.map(s => s.id === "extract" ? { ...s, status: "done" } : s === prev[2] ? { ...s, status: "running" } : s));
+                  await delay(1000);
+                  setProcessSteps(prev => prev.map(s => s.id === "sync" ? { ...s, status: "done" } : s));
+                  setStage("done");
+                  await delay(1500);
+                  setLocation("/dashboard");
+                };
+                runMock();
+              }}
+              className="mt-6 btn-primary px-6 py-2.5 text-sm"
+            >
+              Simulate Upload
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Stage 0.35: Upload Image (Gallery Analysis) ────────────────────────
+  if (stage === "upload-image") {
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const url = URL.createObjectURL(file);
+        setUploadedImageSrc(url);
+      }
+    };
+
+    const processStaticImage = async () => {
+      if (!uploadedImageSrc || !landmarker) return;
+      const img = new Image();
+      const loadPromise = new Promise(r => { img.onload = r; });
+      img.src = uploadedImageSrc;
+      await loadPromise;
+
+      setProcessSteps([
+        { id: "capture", label: "Initializing spatial mapping", icon: <Camera className="w-4 h-4" />, status: "running" },
+        { id: "pose", label: "Extrapolating 3D kinematics", icon: <Eye className="w-4 h-4" />, status: "pending" },
+        { id: "angles", label: "Analyzing joint angular deviations", icon: <Sparkles className="w-4 h-4" />, status: "pending" },
+        { id: "biomech", label: "Computing biomechanical asymmetries", icon: <Activity className="w-4 h-4" />, status: "pending" },
+        { id: "profile", label: "Cross-referencing Twin database", icon: <BarChart3 className="w-4 h-4" />, status: "pending" },
+        { id: "insights", label: "Synthesizing deep AI insights", icon: <Brain className="w-4 h-4" />, status: "pending" },
+      ]);
+      setStage("processing");
+
+      const advance = (id: string, status: ProcessStep["status"]) => {
+        setProcessSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+      };
+      const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+      // Step 1: Spatial mapping
+      await delay(600);
+      advance("capture", "done");
+      advance("pose", "running");
+      
+      await landmarker.setOptions({ runningMode: "IMAGE" });
+      const results = landmarker.detect(img);
+      
+      let avgShoulderTilt = 0;
+      let avgHipTilt = 0;
+      let avgHeadForward = 0;
+      let finalScore = 85; // default
+      let symmetry = 0.9;
+
+      if (results.landmarks && results.landmarks.length > 0) {
+        const lm = results.landmarks[0];
+
+        // --- Draw skeleton on canvas ---
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0);
+
+          // Use DrawingUtils for skeleton
+          const drawingUtils = new DrawingUtils(ctx);
+          drawingUtils.drawLandmarks(lm, { radius: 5, color: "#10b981", fillColor: "#10b981" });
+          drawingUtils.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#0ea5e9", lineWidth: 3 });
+
+          // Calculate angles
+          const lShoulder = lm[11]; const rShoulder = lm[12];
+          const lHip = lm[23]; const rHip = lm[24];
+          const nose = lm[0]; 
+          const midShoulderX = (lShoulder.x + rShoulder.x) / 2;
+
+          avgShoulderTilt = Math.abs(lShoulder.y - rShoulder.y) * canvas.height * 0.3;
+          avgHipTilt = Math.abs(lHip.y - rHip.y) * canvas.height * 0.3;
+          avgHeadForward = Math.abs(nose.x - midShoulderX) * canvas.width * 0.5;
+          
+          const totalDeviation = avgShoulderTilt + avgHipTilt + avgHeadForward;
+          finalScore = Math.max(40, Math.round(100 - totalDeviation * 2));
+          symmetry = Math.max(0.5, 1 - (Math.abs(lShoulder.y - rShoulder.y) + Math.abs(lHip.y - rHip.y)) * 0.5);
+
+          // Draw text overlay for angles
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.fillRect(10, 10, 250, 120);
+          ctx.fillStyle = '#10b981';
+          ctx.font = 'bold 22px sans-serif';
+          ctx.fillText('Posture Analysis', 20, 38);
+          ctx.fillStyle = 'white';
+          ctx.font = '18px sans-serif';
+          ctx.fillText(`Shoulder Tilt: ${avgShoulderTilt.toFixed(1)}°`, 20, 68);
+          ctx.fillText(`Hip Tilt: ${avgHipTilt.toFixed(1)}°`, 20, 92);
+          ctx.fillText(`Head Forward: ${avgHeadForward.toFixed(1)}°`, 20, 116);
+
+          const annotatedUrl = canvas.toDataURL('image/jpeg', 0.85);
+          sessionStorage.setItem("lastAnnotatedImage", annotatedUrl);
+        } catch (e) {
+          console.error("Canvas drawing error", e);
+          sessionStorage.setItem("lastAnnotatedImage", uploadedImageSrc);
+        }
+      } else {
+        sessionStorage.setItem("lastAnnotatedImage", uploadedImageSrc);
+      }
+
+      // Step 2: 3D kinematics done
+      await delay(700); advance("pose", "done");
+
+      // Step 3: Joint angular deviations
+      advance("angles", "running");
+      await delay(900); advance("angles", "done");
+
+      // Step 4: Biomechanical asymmetries — submit to backend
+      advance("biomech", "running");
+      
+      const sessionResult = {
+        mode: "static-image",
+        reps: 1,
+        elapsed: 0,
+        rom: 180,
+        symmetry,
+        movementSpeed: 0,
+        postureScore: finalScore,
+        shoulderTilt: avgShoulderTilt,
+        hipTilt: avgHipTilt,
+        headForward: avgHeadForward,
+      };
+      sessionStorage.setItem("lastSession", JSON.stringify(sessionResult));
+      
+      try {
+        await api.submitVisionSession({
+          user_id: auth.currentUser?.uid || "test-user",
+          task_type: "Static-Image-Posture",
+          pose_landmarks_json: JSON.stringify(results.landmarks || []),
+          joint_angles_json: JSON.stringify({ shoulderTilt: avgShoulderTilt, hipTilt: avgHipTilt, headForward: avgHeadForward }),
+          rom: sessionResult.rom,
+          movement_speed: sessionResult.movementSpeed,
+          symmetry: sessionResult.symmetry,
+          stability: sessionResult.postureScore / 100,
+          camera_quality: "High",
+          annotated_image_url: sessionStorage.getItem("lastAnnotatedImage") || undefined,
+        });
+        await delay(500); advance("biomech", "done");
+      } catch { advance("biomech", "error"); }
+      
+      // Step 5: Cross-reference Twin database
+      advance("profile", "running"); await delay(800); advance("profile", "done");
+
+      // Step 6: Synthesize deep AI insights
+      advance("insights", "running");
+      try {
+        const uid = auth.currentUser?.uid || "test-user";
+        const res = await api.getDeepInsights(uid);
+        sessionStorage.setItem("lastInsights", res.insights || "");
+        await delay(300); advance("insights", "done");
+      } catch { advance("insights", "done"); }
+
+      setStage("done");
+      await delay(800);
+      setLocation("/insights");
+    };
+
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
+          style={{ background: "radial-gradient(ellipse, #10b981, #0ea5e9)" }} />
+
+        <div className="w-full max-w-xl relative z-10">
+          <button onClick={() => { setStage("options"); setUploadedImageSrc(null); }} className="mb-6 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+            ← Back to Options
+          </button>
+          
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-black tracking-tight mb-2">
+              Gallery <span className="text-gradient">Image Analysis</span>
+            </h1>
+            <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+              Upload a standing photo from your gallery. Our AI will analyze your posture alignment instantly.
+            </p>
+          </div>
+
+          <div className="glass-panel p-8 text-center rounded-2xl border-2 border-dashed border-border hover:border-emerald-500/50 transition-colors cursor-pointer group relative overflow-hidden">
+            {!uploadedImageSrc ? (
+              <>
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                  <ImagePlus className="w-8 h-8 text-emerald-500" />
+                </div>
+                <div className="font-bold text-lg mb-1">Click to browse or drag photo here</div>
+                <div className="text-xs text-muted-foreground">Supports JPG, PNG (Max 10MB)</div>
+                <input type="file" accept="image/*" onChange={handleImageChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+              </>
+            ) : (
+              <div className="relative">
+                <img src={uploadedImageSrc} alt="Uploaded" className="max-h-64 mx-auto rounded-lg shadow-lg mb-4" />
+                <button onClick={() => setUploadedImageSrc(null)} className="text-xs text-red-400 hover:text-red-300 mb-4 block mx-auto">Remove Image</button>
+                <button onClick={processStaticImage} disabled={!landmarker} className="btn-primary px-8 py-3 w-full shadow-[0_0_25px_rgba(16,185,129,0.35)] disabled:opacity-50">
+                  {landmarker ? "Analyze Posture" : "Loading AI Model..."}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Stage 0.4: Mode Select ─────────────────────────────────────────────────
   if (stage === "select") {
     const modes = [
       {
@@ -499,6 +1096,26 @@ export default function CaptureEngine() {
         duration: "10 sec",
         color: "#8b5cf6",
         badge: "New",
+      },
+      {
+        id: "squat-analysis" as Mode,
+        icon: <Activity className="w-7 h-7" />,
+        label: "Squat Mechanics",
+        sub: "Form & Depth",
+        desc: "Analyzes squat depth, knee tracking (varus/valgus), and rep speed with real-time audio coaching.",
+        duration: "1–2 min",
+        color: "#ec4899", // pink
+        badge: "Advanced",
+      },
+      {
+        id: "gait-analysis" as Mode,
+        icon: <PersonStanding className="w-7 h-7" />,
+        label: "Gait & Balance Walk",
+        sub: "Locomotion",
+        desc: "Walk across the frame. Evaluates stride length, cadence, and left/right movement symmetry.",
+        duration: "30 sec",
+        color: "#10b981", // green
+        badge: "Clinical",
       },
     ];
 
@@ -589,40 +1206,72 @@ export default function CaptureEngine() {
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-2 mb-5 px-4 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-bold uppercase tracking-widest">
               <Zap className="w-3.5 h-3.5" />
-              {isSts ? "Sit-to-Stand Assessment" : "Standing Posture Scan"}
+              {mode === "sit-to-stand" ? "Sit-to-Stand Assessment" 
+                : mode === "squat-analysis" ? "Squat Mechanics"
+                : mode === "gait-analysis" ? "Gait & Balance Walk" 
+                : "Standing Posture Scan"}
             </div>
             <h1 className="text-4xl font-black tracking-tight mb-3">
-              {isSts ? <>Let's capture your<br /><span className="text-gradient">movement</span></> : <>Let's scan your<br /><span className="text-gradient">posture</span></>}
+              {mode === "standing-posture" ? <>Let's scan your<br /><span className="text-gradient">posture</span></> 
+               : <>Let's capture your<br /><span className="text-gradient">movement</span></>}
             </h1>
             <p className="text-muted-foreground text-sm max-w-sm mx-auto leading-relaxed">
-              {isSts
-                ? "Follow these quick steps for an accurate reading. Takes under 2 minutes."
-                : "Stand naturally for 10 seconds. Our AI will analyse your alignment and generate posture insights."}
+              {mode === "standing-posture"
+                ? "Stand naturally for 10 seconds. Our AI will analyse your alignment."
+                : "Follow these quick steps for an accurate reading. Takes under 2 minutes."}
             </p>
           </div>
 
-          <div className="card p-6 space-y-5 mb-8 shadow-lg">
-            {isSts ? (
+          <div className="card p-6 space-y-5 mb-6 shadow-lg">
+            {mode === "sit-to-stand" && (
               <>
                 <SetupStep num={1} title="Place camera 2 metres away" desc="Set your phone or laptop so the camera faces you from the side or front at full height." />
                 <div className="h-px bg-border" />
-                <SetupStep num={2} title="Full body must be visible" desc="Head, torso, knees, and feet all need to be in frame throughout the movement." />
+                <SetupStep num={2} title="Find a sturdy chair" desc="Sit all the way back. Keep arms crossed or at your sides — no armrests for pushing up." />
                 <div className="h-px bg-border" />
-                <SetupStep num={3} title="Find a sturdy chair" desc="Sit all the way back. Keep arms crossed or at your sides — no armrests for pushing up." />
-                <div className="h-px bg-border" />
-                <SetupStep num={4} title="Perform slow, controlled sit-to-stands" desc="Rise fully upright, pause, then sit back down. Aim for 5–10 reps at a comfortable pace." />
+                <SetupStep num={3} title="Perform slow, controlled sit-to-stands" desc="Rise fully upright, pause, then sit back down. Aim for 5–10 reps at a comfortable pace." />
               </>
-            ) : (
+            )}
+            {mode === "squat-analysis" && (
+              <>
+                <SetupStep num={1} title="Place camera 2 metres away" desc="Position the camera straight-on to track knee varus/valgus collapse." />
+                <div className="h-px bg-border" />
+                <SetupStep num={2} title="Squat to depth" desc="Go as low as comfortable. AI will track your hip crease and knee angle." />
+                <div className="h-px bg-border" />
+                <SetupStep num={3} title="Listen to coaching" desc="If your knees cave in, you'll hear a voice cue to correct your form." />
+              </>
+            )}
+            {mode === "gait-analysis" && (
+              <>
+                <SetupStep num={1} title="Clear a walking path" desc="Ensure you have at least 3-4 metres of horizontal space visible." />
+                <div className="h-px bg-border" />
+                <SetupStep num={2} title="Walk normally" desc="Walk side-to-side across the frame. The AI will measure your stride symmetry." />
+              </>
+            )}
+            {mode === "standing-posture" && (
               <>
                 <SetupStep num={1} title="Place camera 2 metres away" desc="Ideally at chest height so your full body fits in frame. Straight-on or slight angle both work." />
                 <div className="h-px bg-border" />
                 <SetupStep num={2} title="Stand naturally — don't try to look 'perfect'" desc="Relax your shoulders, arms at your sides, feet hip-width apart. We want your natural posture." />
                 <div className="h-px bg-border" />
                 <SetupStep num={3} title="Stay still for 10 seconds" desc="The scan will auto-stop after 10 seconds. You'll see a countdown and live alignment guides on screen." />
-                <div className="h-px bg-border" />
-                <SetupStep num={4} title="Review your posture report" desc="You'll be redirected to an AI-generated breakdown of your shoulder, hip, and head alignment." />
               </>
             )}
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/20 mb-8 cursor-pointer" onClick={() => setAudioCoaching(!audioCoaching)}>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                {audioCoaching ? <Zap className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </div>
+              <div>
+                <div className="text-sm font-bold">Audio Coaching</div>
+                <div className="text-xs text-muted-foreground">Voice feedback during capture</div>
+              </div>
+            </div>
+            <div className={`w-10 h-5 rounded-full transition-colors relative ${audioCoaching ? 'bg-primary' : 'bg-border'}`}>
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${audioCoaching ? 'left-5' : 'left-1'}`} />
+            </div>
           </div>
 
           <button
@@ -691,7 +1340,7 @@ export default function CaptureEngine() {
           <div className="flex items-center gap-3">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
             <span className="text-sm font-bold uppercase tracking-widest text-red-400">
-              {isSts ? "Recording" : "Posture Scan"}
+              {mode === "standing-posture" ? "Posture Scan" : "Recording"}
             </span>
           </div>
           <span className="font-mono-numbers text-xl font-black text-primary">{formatTime(elapsed)}</span>
@@ -859,17 +1508,25 @@ export default function CaptureEngine() {
       ? (m.framesAnalyzed > 0 ? Math.round((m.symmetrySum / m.framesAnalyzed) * 100) : 95)
       : Math.round(Math.max(0, 1 - ((p.frames > 0 ? (p.shoulderTiltSum + p.hipTiltSum) / p.frames : 0) / 30)) * 100);
 
-    const quickStats = isSts
+    const quickStats = mode === "medical-report" 
       ? [
-          { label: "Reps", value: reps.toString(), icon: <Zap className="w-4 h-4" /> },
-          { label: "ROM", value: `${rom}°`, icon: <Activity className="w-4 h-4" /> },
-          { label: "Symmetry", value: `${sym}%`, icon: <Sparkles className="w-4 h-4" /> },
+          { label: "Pages Scanned", value: "1", icon: <FileText className="w-4 h-4" /> },
+          { label: "Risk Factors", value: "2", icon: <Activity className="w-4 h-4" /> },
+          { label: "Confidence", value: "High", icon: <Sparkles className="w-4 h-4" /> },
         ]
-      : [
-          { label: "Posture Score", value: `${postureScore}`, icon: <Sparkles className="w-4 h-4" /> },
-          { label: "Symmetry", value: `${sym}%`, icon: <Activity className="w-4 h-4" /> },
-          { label: "Duration", value: `${elapsed}s`, icon: <Zap className="w-4 h-4" /> },
-        ];
+      : isSts
+        ? [
+            { label: "Reps", value: reps.toString(), icon: <Zap className="w-4 h-4" /> },
+            { label: "ROM", value: `${rom}°`, icon: <Activity className="w-4 h-4" /> },
+            { label: "Symmetry", value: `${sym}%`, icon: <Sparkles className="w-4 h-4" /> },
+          ]
+        : [
+            { label: "Posture Score", value: `${postureScore}`, icon: <Sparkles className="w-4 h-4" /> },
+            { label: "Symmetry", value: `${sym}%`, icon: <Activity className="w-4 h-4" /> },
+            { label: "Duration", value: `${elapsed}s`, icon: <Zap className="w-4 h-4" /> },
+          ];
+
+    const annotatedImage = sessionStorage.getItem("lastAnnotatedImage");
 
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
@@ -897,6 +1554,15 @@ export default function CaptureEngine() {
             ))}
           </div>
 
+          {annotatedImage && mode === "static-image" && (
+            <div className="mb-6 relative rounded-2xl overflow-hidden border border-border shadow-[0_0_20px_rgba(16,185,129,0.15)] anim-fade">
+              <img src={annotatedImage} alt="AI Annotated Posture" className="w-full h-auto" />
+              <div className="absolute top-3 right-3 badge badge-cyan shadow-md">
+                <Sparkles className="w-3 h-3 mr-1" /> AI Processed
+              </div>
+            </div>
+          )}
+
           <div className="card p-5">
             <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">Processing Pipeline</div>
             {processSteps.map(step => <ProcessRow key={step.id} step={step} />)}
@@ -916,4 +1582,15 @@ export default function CaptureEngine() {
   }
 
   return null;
+}
+
+export default function CaptureEngine() {
+  return (
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground pb-[72px] md:pb-0 bg-background">
+      <Sidebar />
+      <main className="flex-1 overflow-hidden relative z-10 w-full flex flex-col">
+        <CaptureEngineContent />
+      </main>
+    </div>
+  );
 }

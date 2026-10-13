@@ -51,6 +51,7 @@ class VisionSession(Base):
     symmetry = Column(Float)
     stability = Column(Float)
     camera_quality = Column(String)
+    annotated_image_url = Column(Text, nullable=True)
 
 class FusedSession(Base):
     __tablename__ = "fused_sessions"

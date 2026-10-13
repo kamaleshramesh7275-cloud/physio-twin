@@ -26,8 +26,25 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024
       }
     })
   ],
+  server: {
+    proxy: {
+      '/analytics': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/sessions': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/reports': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      }
+    }
+  }
 })

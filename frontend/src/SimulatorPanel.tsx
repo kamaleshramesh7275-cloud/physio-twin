@@ -5,10 +5,12 @@ import { auth } from "./firebase";
 
 export default function SimulatorPanel({ 
   currentReserve, 
-  currentRecovery 
+  currentRecovery,
+  onSimulate
 }: { 
   currentReserve: number, 
-  currentRecovery: number 
+  currentRecovery: number,
+  onSimulate?: (data: { reserve: number, recovery: number } | null) => void
 }) {
   const [activity, setActivity] = useState("Running");
   const [duration, setDuration] = useState(30);
@@ -19,6 +21,7 @@ export default function SimulatorPanel({
 
   const handleSimulate = async () => {
     setLoading(true);
+    let simResult;
     try {
       const uid = auth.currentUser?.uid || "test-user";
       const res = await api.simulateActivity(uid, {
@@ -26,19 +29,23 @@ export default function SimulatorPanel({
         duration_mins: duration,
         intensity
       });
-      setResult(res);
+      simResult = res;
     } catch (e) {
       console.error(e);
       // Fallback if no network
       const cost = duration * 0.8;
-      setResult({
+      simResult = {
         original: { reserve: currentReserve, recovery: currentRecovery },
         simulated: { 
           reserve: Math.max(0, currentReserve - cost),
           recovery: Math.max(0, currentRecovery - (cost * 0.5))
         },
         cost
-      });
+      };
+    }
+    setResult(simResult);
+    if (onSimulate) {
+      onSimulate(simResult.simulated);
     }
     setLoading(false);
   };

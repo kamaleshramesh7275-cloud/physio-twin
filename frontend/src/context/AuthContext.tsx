@@ -18,7 +18,9 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [googleFitToken, setGoogleFitToken] = useState<string | null>(null);
+  const [googleFitToken, setGoogleFitToken] = useState<string | null>(() => {
+    return localStorage.getItem("googleFitToken");
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential && credential.accessToken) {
         setGoogleFitToken(credential.accessToken);
+        localStorage.setItem("googleFitToken", credential.accessToken);
       }
     } catch (error) {
       console.error("Login failed", error);
@@ -63,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await signOut(auth);
     setGoogleFitToken(null);
+    localStorage.removeItem("googleFitToken");
   };
 
   return (

@@ -84,7 +84,7 @@ function getMaterial(risk: number = 0, isSelected: boolean = false) {
   });
 }
 
-function Model({ riskData, selectedZone, onZoneClick }: HoloModel3DProps) {
+function Model({ riskData = {}, selectedZone, onZoneClick }: HoloModel3DProps) {
   const { scene } = useGLTF("/model.glb");
   const clonedScene = useMemo(() => scene.clone(), [scene]);
 

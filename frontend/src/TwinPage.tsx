@@ -62,7 +62,7 @@ const LEADERBOARD_DATA = [
 ];
 
 // ── Zone metadata (injuries, causes, actions) ─────────────
-const ZONE_META: Partial<Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }>> = {
+const DETAILED_ZONE_META: Partial<Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }>> = {
   left_knee:      { label:"Left Knee",      injuries:["Patellofemoral Stress","Valgus Overload"],  rootCause:"Quad weakness + hip abductor deficit causing 4.2° varus angle during loading.", immediateAction:"Eccentric quad protocol (3×10 step-downs). Ice 15 min post-session.", longTermRisk:"Without intervention: medial compartment OA onset risk within 18 months." },
   right_knee:     { label:"Right Knee",     injuries:["Moderate Valgus Stress"],                   rootCause:"Compensatory loading from left-side weakness increasing right knee joint force.", immediateAction:"Hip abductor strengthening — clamshells 3×15, side-lying leg raises.", longTermRisk:"Risk escalates to match left knee severity within 3 months if untreated." },
   lumbar:         { label:"Lower Back",     injuries:["Lumbar Instability","Flexion Intolerance"], rootCause:"Core bracing deficit (48%). Excessive anterior pelvic tilt in 6 of 8 sessions.", immediateAction:"Dead bug 3×10, prone cobra 3×15. Avoid loaded flexion.", longTermRisk:"Progressive disc loading risk. Probable L4/L5 irritation at current trajectory." },
@@ -74,13 +74,7 @@ const ZONE_META: Partial<Record<ZoneId, { label:string; injuries:string[]; rootC
   neck:           { label:"Neck",           injuries:["Forward Head Posture"],                     rootCause:"1.5cm anterior head shift. Linked to screen habits.", immediateAction:"Chin tucks 3×10, deep neck flexor strengthening.", longTermRisk:"Cervicogenic headache risk increases without postural correction." },
   left_thigh:     { label:"Left Thigh",     injuries:["Quad Strength Deficit"],                    rootCause:"Left quad at 68% of right-side force — significant asymmetry.", immediateAction:"Eccentric step-downs left side, single-leg press 3×12.", longTermRisk:"Primary driver of left knee valgus. Priority for intervention." },
   right_thigh:    { label:"Right Thigh",    injuries:["Compensatory Load"],                        rootCause:"Compensating for left deficit. Load within acceptable range.", immediateAction:"Continue bilateral strengthening.", longTermRisk:"Stable if left side improves." },
-  if (!vals.length) return 850;
-  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-  return Math.max(0, Math.round(1000 - (avg * 8)));
-}
-
-// Global list of zones
-const ALL_ZONES: ZoneId[] = ["left_knee", "right_knee", "lumbar", "cervical", "left_shoulder", "right_shoulder", "left_ankle", "right_ankle", "left_hip", "right_hip"];
+};
 
 const ZONE_META: Record<string, { label: string, desc: string, icon: any }> = {
   left_knee: { label: "L. Knee", desc: "Patellar tracking issue detected. Increased valgus stress on descent.", icon: Activity },
@@ -132,9 +126,10 @@ export default function TwinPage() {
   const [showTreatment, setShowTreatment] = useState(false);
   const [syncedData, setSyncedData] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [projIdx, setProjIdx] = useState<number>(0);
 
   const [liveRisk, setLiveRisk] = useState<ZoneRisk>({
-    left_knee: 72, right_knee: 25, lumbar: 48, cervical: 65, left_shoulder: 20, right_shoulder: 15, left_ankle: 55, right_ankle: 30, left_hip: 18, right_hip: 22
+    left_knee: 72, right_knee: 25, lumbar: 48, neck: 65, left_shoulder: 20, right_shoulder: 15, left_ankle: 55, right_ankle: 30, left_hip: 18, right_hip: 22
   });
   const [historyData, setHistoryData] = useState<any[]>([]);
 
@@ -187,8 +182,8 @@ export default function TwinPage() {
   const DEMO_PROJECTION = [
     {
       horizon: "1 Month Forecast",
-      zones: { ...liveRisk, left_knee: Math.min(100, liveRisk.left_knee + 8), lumbar: Math.min(100, liveRisk.lumbar + 5) },
-      withTreatment: { ...liveRisk, left_knee: Math.max(0, liveRisk.left_knee - 15), lumbar: Math.max(0, liveRisk.lumbar - 10) }
+      zones: { ...liveRisk, left_knee: Math.min(100, (liveRisk.left_knee || 0) + 8), lumbar: Math.min(100, (liveRisk.lumbar || 0) + 5) },
+      withTreatment: { ...liveRisk, left_knee: Math.max(0, (liveRisk.left_knee || 0) - 15), lumbar: Math.max(0, (liveRisk.lumbar || 0) - 10) }
     }
   ];
 
@@ -200,7 +195,8 @@ export default function TwinPage() {
     (showTreatment ? DEMO_PROJECTION[0].withTreatment : DEMO_PROJECTION[0].zones);
 
   const score      = overallScore(displayRisk);
-  const zoneMeta   = selectedZone ? ZONE_META[selectedZone] : undefined;
+  const zoneMeta   = selectedZone ? DETAILED_ZONE_META[selectedZone as ZoneId] : undefined;
+  const basicMeta  = selectedZone ? ZONE_META[selectedZone] : undefined;
   const zoneRisk   = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
 
   const topRisk = ALL_ZONES
@@ -305,11 +301,11 @@ export default function TwinPage() {
                 )}
               </div>
 
-              {zoneMeta ? (
+              {(zoneMeta || basicMeta) ? (
                 <div className="anim-up">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h2 className="font-black text-xl tracking-tight">{zoneMeta.label}</h2>
+                      <h2 className="font-black text-xl tracking-tight">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
                       <div className="flex items-center gap-2 mt-2">
                         <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${riskBg(zoneRisk)}`}>{riskLabel(zoneRisk)}</span>
                         <span className="font-mono text-lg font-black" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}</span>
@@ -321,7 +317,7 @@ export default function TwinPage() {
                     <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
                   </div>
                   
-                  {zoneMeta.injuries.length > 0 && (
+                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
                     <div className="mb-5">
                       <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-2">Active Issues</div>
                       {zoneMeta.injuries.map(inj => (
@@ -333,25 +329,37 @@ export default function TwinPage() {
                   )}
 
                   <div className="space-y-3">
-                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
-                      <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                        <Activity className="w-3.5 h-3.5" /> Diagnostic Reasoning (Hevy Data)
+                    {zoneMeta?.rootCause && (
+                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
+                        <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                          <Activity className="w-3.5 h-3.5" /> Diagnostic Reasoning (Hevy Data)
+                        </div>
+                        <p className="text-sm text-amber-100/70 leading-relaxed">
+                          {zoneMeta.rootCause} <br/><br/>
+                          <span className="text-amber-400 font-semibold">Hevy Log Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
+                        </p>
                       </div>
-                      <p className="text-sm text-amber-100/70 leading-relaxed">
-                        {zoneMeta.rootCause} <br/><br/>
-                        <span className="text-amber-400 font-semibold">Hevy Log Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
-                      </p>
-                    </div>
-                    <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
-                      <div className="text-[10px] font-black text-primary uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                        <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
+                    )}
+                    {zoneMeta?.immediateAction && (
+                      <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
+                        <div className="text-[10px] font-black text-primary uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                          <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
+                        </div>
+                        <p className="text-sm text-blue-100/70 leading-relaxed">{zoneMeta.immediateAction}</p>
                       </div>
-                      <p className="text-sm text-blue-100/70 leading-relaxed">{zoneMeta.immediateAction}</p>
-                    </div>
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
-                      <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1.5">Long-Term Risk if Ignored</div>
-                      <p className="text-sm text-red-100/70 leading-relaxed">{zoneMeta.longTermRisk}</p>
-                    </div>
+                    )}
+                    {zoneMeta?.longTermRisk && (
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
+                        <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1.5">Long-Term Risk if Ignored</div>
+                        <p className="text-sm text-red-100/70 leading-relaxed">{zoneMeta.longTermRisk}</p>
+                      </div>
+                    )}
+                    {!zoneMeta && basicMeta && (
+                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                         <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Zone Overview</div>
+                         <p className="text-sm text-white/70 leading-relaxed">{basicMeta.desc}</p>
+                       </div>
+                    )}
                   </div>
                 </div>
               ) : (

@@ -10,7 +10,7 @@ import {
   Smartphone, Apple, Dumbbell, Stethoscope
 } from 'lucide-react';
 import { api } from "./api";
-import { auth } from "./firebase";
+import { useAuth } from "./context/AuthContext";
 import ChatInterface from "./ChatInterface";
 import SimulatorPanel from "./SimulatorPanel";
 import { useAvatar } from "./AvatarContext";
@@ -50,12 +50,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const { setHighlightMode } = useAvatar();
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [externalData, setExternalData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timelineIndex, setTimelineIndex] = useState(100);
+  const [simulationOverride, setSimulationOverride] = useState<{ reserve: number, recovery: number } | null>(null);
   const [rightRailTab, setRightRailTab] = useState<'chat' | 'simulate' | 'inspect'>('chat');
   const [, setLocation] = useLocation();
 
@@ -66,10 +68,17 @@ export default function Dashboard() {
     setRightRailTab('inspect');
   };
 
+  // Clear simulation override if tab changes or timeline moves
+  useEffect(() => {
+    if (rightRailTab !== 'simulate' || timelineIndex < 100) {
+      setSimulationOverride(null);
+    }
+  }, [rightRailTab, timelineIndex]);
+
   useEffect(() => {
     async function loadData() {
       try {
-        const uid = auth.currentUser?.uid || "test-user";
+        const uid = user?.uid || "test-user";
         const [dashRes, extRes] = await Promise.all([
           api.getDashboard(uid),
           api.getExternalApps(uid)
@@ -96,13 +105,31 @@ export default function Dashboard() {
   }
 
   const activeTrendData = data.trend_data || [];
-  const overallScore = ((data.mobility + data.stability + data.quality + data.cardio + data.recovery) / 5).toFixed(1);
+  let displayData = { ...data };
+  
+  if (activeTrendData.length > 0 && timelineIndex < 100) {
+    const historicalIndex = Math.floor((timelineIndex / 100) * (activeTrendData.length - 1));
+    const hist = activeTrendData[historicalIndex];
+    if (hist) {
+      displayData.mobility = hist.mobility;
+      displayData.stability = hist.stability;
+      displayData.recovery = hist.recovery;
+      displayData.reserve = hist.reserve;
+    }
+  }
+
+  if (simulationOverride && timelineIndex === 100) {
+    displayData.reserve = simulationOverride.reserve;
+    displayData.recovery = simulationOverride.recovery;
+  }
+
+  const overallScore = ((displayData.mobility + displayData.stability + displayData.quality + displayData.cardio + displayData.recovery) / 5).toFixed(1);
   const fingerprintData = [
-    { subject: 'Mobility', A: data.mobility, fullMark: 100 },
-    { subject: 'Stability', A: data.stability, fullMark: 100 },
-    { subject: 'Quality', A: data.quality, fullMark: 100 },
-    { subject: 'Cardio', A: data.cardio, fullMark: 100 },
-    { subject: 'Recovery', A: data.recovery, fullMark: 100 },
+    { subject: 'Mobility', A: displayData.mobility, fullMark: 100 },
+    { subject: 'Stability', A: displayData.stability, fullMark: 100 },
+    { subject: 'Quality', A: displayData.quality, fullMark: 100 },
+    { subject: 'Cardio', A: displayData.cardio, fullMark: 100 },
+    { subject: 'Recovery', A: displayData.recovery, fullMark: 100 },
   ];
 
   return (
@@ -155,11 +182,11 @@ export default function Dashboard() {
         {/* Score Cards Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 anim-up-d1">
           {[
-            { key: 'Mobility', val: data.mobility, delta: 2.3, color: '#3b82f6', icon: <Dna className="w-5 h-5" />, spark: [{v:75},{v:76},{v:77},{v:78},{v:data.mobility}] },
-            { key: 'Stability', val: data.stability, delta: -14.5, color: '#f59e0b', icon: <Scale className="w-5 h-5" />, spark: [{v:70},{v:68},{v:65},{v:60},{v:data.stability}] },
-            { key: 'Quality', val: data.quality, delta: 0.8, color: '#10b981', icon: <Sparkles className="w-5 h-5" />, spark: [{v:85},{v:85},{v:86},{v:86},{v:data.quality}] },
-            { key: 'Cardio', val: data.cardio, delta: 1.2, color: '#ec4899', icon: <HeartPulse className="w-5 h-5" />, spark: [{v:75},{v:76},{v:76},{v:77},{v:data.cardio}] },
-            { key: 'Recovery', val: data.recovery, delta: 3.1, color: '#8b5cf6', icon: <Battery className="w-5 h-5" />, spark: [{v:80},{v:82},{v:85},{v:88},{v:data.recovery}] },
+            { key: 'Mobility', val: displayData.mobility, delta: 2.3, color: '#3b82f6', icon: <Dna className="w-5 h-5" />, spark: [{v:75},{v:76},{v:77},{v:78},{v:displayData.mobility}] },
+            { key: 'Stability', val: displayData.stability, delta: -14.5, color: '#f59e0b', icon: <Scale className="w-5 h-5" />, spark: [{v:70},{v:68},{v:65},{v:60},{v:displayData.stability}] },
+            { key: 'Quality', val: displayData.quality, delta: 0.8, color: '#10b981', icon: <Sparkles className="w-5 h-5" />, spark: [{v:85},{v:85},{v:86},{v:86},{v:displayData.quality}] },
+            { key: 'Cardio', val: displayData.cardio, delta: 1.2, color: '#ec4899', icon: <HeartPulse className="w-5 h-5" />, spark: [{v:75},{v:76},{v:76},{v:77},{v:displayData.cardio}] },
+            { key: 'Recovery', val: displayData.recovery, delta: 3.1, color: '#8b5cf6', icon: <Battery className="w-5 h-5" />, spark: [{v:80},{v:82},{v:85},{v:88},{v:displayData.recovery}] },
           ].map(m => (
             <button
               key={m.key}
@@ -274,7 +301,7 @@ export default function Dashboard() {
           {/* Right Column (Trend) */}
           <div className="metric-card glass-panel pointer-events-auto cursor-pointer flex flex-col" onClick={() => setSelectedMetric('Trend')}>
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">Longitudinal Trend</div>
-            <div className="flex-1 w-full min-h-[300px]">
+            <div className="w-full h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={activeTrendData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
@@ -299,11 +326,11 @@ export default function Dashboard() {
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-muted-foreground">Current Demand</span>
-                  <span className="font-mono-numbers">{(100 - data.reserve).toFixed(0)}%</span>
+                  <span className="font-mono-numbers">{(100 - displayData.reserve).toFixed(0)}%</span>
                 </div>
                 <div className="h-2 bg-border rounded-full overflow-hidden">
                   <div className="h-full rounded-full bg-slate-300 transition-all duration-700"
-                    style={{ width: `${100 - data.reserve}%` }} />
+                    style={{ width: `${100 - displayData.reserve}%` }} />
                 </div>
               </div>
               <div>
@@ -390,7 +417,11 @@ export default function Dashboard() {
 
           {rightRailTab === 'simulate' && (
             <div className="h-full min-h-[400px]">
-              <SimulatorPanel currentReserve={data.reserve} currentRecovery={data.recovery} />
+              <SimulatorPanel 
+                currentReserve={displayData.reserve} 
+                currentRecovery={displayData.recovery} 
+                onSimulate={setSimulationOverride}
+              />
             </div>
           )}
 

@@ -134,6 +134,15 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
 }
 
 function AppContent() {
+  const { user, loading } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (location === '/' && !loading && user) {
+      setLocation("/dashboard");
+    }
+  }, [location, user, loading, setLocation]);
+
   return (
     <AvatarProvider>
       <div className="min-h-screen bg-background text-foreground">
@@ -143,7 +152,7 @@ function AppContent() {
         <Route path="/register" component={LoginPage} />
         <Route path="/onboarding" component={Onboarding} />
         <Route path="/capture" component={CaptureEngine} />
-        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
         <Route path="/demo" component={DemoDashboard} />
         
         {/* Protected Routes */}
@@ -152,7 +161,7 @@ function AppContent() {
         <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
         <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
         <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>
-        <Route path="/workout-strain"><ProtectedRoute component={WorkoutStrain} /></Route>
+        <Route path="/muscular-strain"><ProtectedRoute component={WorkoutStrain} /></Route>
         <Route path="/timeline"><ProtectedRoute component={TimelinePage} /></Route>
         <Route path="/insights"><ProtectedRoute component={InsightsPage} /></Route>
         <Route path="/settings"><ProtectedRoute component={SettingsPage} /></Route>

@@ -1,7 +1,22 @@
-const API_BASE = `http://${window.location.hostname}:8000`;
+const getApiBase = (): string => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return (import.meta.env.VITE_API_BASE_URL as string).replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return `http://${hostname}:8000`;
+    }
+    // Deployed or tunnel environment without explicit API URL: use relative root for proxying
+    return "";
+  }
+  return "http://localhost:8000";
+};
+
+export const API_BASE = getApiBase();
 
 async function fetchWithTimeout(resource: string, options: RequestInit & { timeout?: number } = {}) {
-  const { timeout = 3000 } = options;
+  const { timeout = 10000 } = options;
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
@@ -59,8 +74,22 @@ export const api = {
       headers: {
         "Content-Type": "application/json",
       },
+      timeout: 15000
     });
     if (!res.ok) throw new Error("Failed to generate deep insights");
+    return res.json();
+  },
+
+  async uploadMedicalReport(userId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    // Don't use fetchWithTimeout here because upload/analysis might take a while
+    const res = await fetch(`${API_BASE}/reports/analyze/${userId}`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Failed to analyze medical report");
     return res.json();
   },
 
