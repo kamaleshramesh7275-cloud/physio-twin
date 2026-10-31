@@ -58,23 +58,25 @@ function generateLocalTwinReply(query: string): string {
   if (
     q.includes("recovery") ||
     q.includes("sleep") ||
-    q.includes("rest") ||
     q.includes("tired") ||
-    q.includes("fatigue")
+    q.includes("rest")
   ) {
     return (
-      "Your Recovery Score is 88%, which indicates good sleep quality and resting heart rate stability. To restore your capability reserve back above 80%, stay well-hydrated and incorporate light foam rolling tonight."
+      "Your recovery is at 88% and sleep score is 88/100. Tissue rebuilding is on track. Maintain 25g+ protein per meal to maximize muscle protein synthesis."
     );
   }
 
   return (
-    "As your PhysioTwin, I monitor your movement quality (92%), stability (55%), and recovery reserve (55%). You can ask me 'how is my health?', 'recommend a workout', or 'check joint risks' anytime!"
+    "I am analyzing your digital twin's latest kinematics. Your movement quality is 92%, but stability needs attention before your next heavy leg day. Let me know if you want an exercise modification or fatigue breakdown!"
   );
 }
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "twin", content: "Hello! I'm your PhysioTwin. How can I help you today? You can ask me about your latest stats or ask for advice." }
+    {
+      role: "twin",
+      content: "Hello! I am your PhysioTwin AI. Ask me about your stability, mobility, recovery, or today's workout readiness."
+    }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -86,74 +88,63 @@ export default function ChatInterface() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
-    const userMsg = input.trim();
+    const userText = input.trim();
     setInput("");
-    const newMessages: Message[] = [...messages, { role: "user", content: userMsg }];
-    setMessages(newMessages);
+    setMessages(prev => [...prev, { role: "user", content: userText }]);
     setLoading(true);
 
     try {
       const uid = auth.currentUser?.uid || "test-user";
-      // Convert to API format
-      const apiMessages = newMessages.map(m => ({
-        role: m.role === "twin" ? "assistant" : "user",
-        content: m.content
-      }));
-      
-      const res = await api.chatWithTwin(uid, apiMessages);
-      if (res && res.response) {
-        setMessages([...newMessages, { role: "twin", content: res.response }]);
-      } else {
-        throw new Error("Invalid response format");
-      }
-    } catch (e) {
-      console.warn("Backend chat unavailable, using local Twin engine fallback:", e);
-      const fallbackReply = generateLocalTwinReply(userMsg);
-      setMessages([...newMessages, { role: "twin", content: fallbackReply }]);
+      const newMessages = [...messages, { role: "user", content: userText }];
+      const res = await api.chatWithTwin(uid, newMessages);
+      const reply = res?.reply || res?.message || generateLocalTwinReply(userText);
+      setMessages(prev => [...prev, { role: "twin", content: reply }]);
+    } catch {
+      const fallback = generateLocalTwinReply(userText);
+      setMessages(prev => [...prev, { role: "twin", content: fallback }]);
     }
-    
     setLoading(false);
   };
 
   return (
-    <div className="flex flex-col h-full bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 p-3 border-b border-border bg-muted/30">
-        <Brain className="w-5 h-5 text-primary" />
+      <div className="flex items-center gap-2 p-3.5 border-b border-slate-100 bg-slate-50/80">
+        <Brain className="w-4 h-4 text-blue-600" />
         <div>
-          <div className="text-sm font-bold">Interactive Twin</div>
-          <div className="text-xs text-muted-foreground">Ask me anything</div>
+          <div className="text-xs font-bold text-slate-900">Interactive Twin Copilot</div>
+          <div className="text-[10px] text-slate-500">Biomechanical Intelligence active</div>
         </div>
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
         {messages.map((msg, i) => (
-          <div key={i} className={`flex items-start gap-2 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${msg.role === "user" ? "bg-slate-200" : "bg-primary text-white"}`}>
-              {msg.role === "user" ? <User className="w-3 h-3 text-slate-600" /> : <Brain className="w-3 h-3" />}
+          <div key={i} className={`flex items-start gap-2.5 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${msg.role === "user" ? "bg-blue-100 text-blue-700" : "bg-blue-600 text-white"}`}>
+              {msg.role === "user" ? <User className="w-3.5 h-3.5" /> : <Brain className="w-3.5 h-3.5" />}
             </div>
-            <div className={`text-xs px-3 py-2 rounded-xl max-w-[85%] leading-relaxed ${
-              msg.role === "user" 
-                ? "bg-slate-100 text-slate-800 rounded-tr-sm" 
-                : "bg-primary/10 text-foreground border border-primary/20 rounded-tl-sm"
-            }`}>
+            <div className={`text-xs px-3.5 py-2.5 max-w-[85%] leading-relaxed ${msg.role === "user"
+                ? "bg-blue-600 text-white rounded-2xl rounded-tr-xs shadow-xs font-medium"
+                : "bg-slate-100 text-slate-800 border border-slate-200/80 rounded-2xl rounded-tl-xs whitespace-pre-wrap font-normal"
+              }`}>
               {msg.content}
             </div>
           </div>
         ))}
         {loading && (
-          <div className="flex items-start gap-2">
-            <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shrink-0">
-              <Brain className="w-3 h-3" />
+          <div className="flex items-start gap-2.5">
+            <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+              <Brain className="w-3.5 h-3.5" />
             </div>
-            <div className="text-xs px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 rounded-tl-sm flex items-center">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
+            <div className="text-xs px-3.5 py-2.5 rounded-2xl bg-slate-100 border border-slate-200/80 rounded-tl-xs flex items-center gap-2 text-slate-600">
+              <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+              <span>Analyzing telemetry...</span>
             </div>
           </div>
         )}
@@ -161,23 +152,23 @@ export default function ChatInterface() {
       </div>
 
       {/* Input Area */}
-      <div className="p-3 border-t border-border bg-background">
+      <div className="p-3 border-t border-slate-100 bg-white">
         <div className="relative">
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleSend()}
-            placeholder="Ask about your stats..."
-            className="w-full bg-muted border border-border rounded-full py-2 pl-4 pr-10 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="Ask about your stability, load, or recovery..."
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 pl-4 pr-10 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/15 focus:border-blue-600 transition-all"
             disabled={loading}
           />
-          <button 
+          <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className="absolute right-1.5 top-1.5 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center disabled:opacity-50 hover:bg-primary/90 transition-colors"
+            className="absolute right-1.5 top-1.5 w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center disabled:opacity-40 hover:bg-blue-700 transition-colors cursor-pointer"
           >
-            <Send className="w-3 h-3 ml-0.5" />
+            <Send className="w-3.5 h-3.5 ml-0.5" />
           </button>
         </div>
       </div>

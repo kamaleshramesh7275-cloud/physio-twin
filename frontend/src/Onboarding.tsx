@@ -32,18 +32,20 @@ export default function Onboarding() {
   const progress = ((step - 1) / (STEPS.length - 1)) * 100;
 
   return (
-    <div className="min-h-screen relative flex flex-col items-center justify-center p-4 overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 bg-grid opacity-30" />
+    <div className="min-h-screen relative flex flex-col items-center justify-center p-4 overflow-hidden bg-slate-50 text-slate-900 font-sans">
+      {/* Decorative background */}
+      <div className="fixed inset-0 pointer-events-none opacity-20">
+        <div className="absolute top-[10%] left-[20%] w-[500px] h-[500px] bg-blue-300/20 blur-[130px] rounded-full" />
+      </div>
 
       <div className="relative z-10 w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-8 animate-fade-in">
-          <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-xs font-black text-white shadow-md">PT</div>
-            <span className="font-bold tracking-tight">PhysioTwin</span>
+          <div className="inline-flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-xs font-black text-white shadow-sm shadow-blue-500/25">PT</div>
+            <span className="font-black text-lg tracking-tight text-slate-900">PhysioTwin</span>
           </div>
-          <div className="text-muted-foreground text-sm">Step {step} of {STEPS.length}</div>
+          <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Step {step} of {STEPS.length}</div>
         </div>
 
         {/* Progress Bar */}
@@ -52,15 +54,15 @@ export default function Onboarding() {
             {STEPS.map((s, i) => (
               <div key={s.id} className="flex items-center flex-1">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all duration-300 ${
-                  step > s.id ? 'bg-gradient-to-br from-purple-500 to-purple-400 text-white' :
-                  step === s.id ? 'bg-primary/10 border-2 border-primary text-primary' :
-                  'bg-card border border-border text-muted-foreground'
+                  step > s.id ? 'bg-blue-600 text-white shadow-xs' :
+                  step === s.id ? 'bg-blue-50 border-2 border-blue-600 text-blue-700' :
+                  'bg-white border border-slate-200 text-slate-400'
                 }`}>
                   {step > s.id ? <Check className="w-4 h-4" /> : s.id}
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className="flex-1 h-0.5 mx-2 rounded-full overflow-hidden bg-border">
-                    <div className="h-full bg-primary transition-all duration-500"
+                  <div className="flex-1 h-0.5 mx-2 rounded-full overflow-hidden bg-slate-200">
+                    <div className="h-full bg-blue-600 transition-all duration-500"
                       style={{ width: step > s.id ? '100%' : '0%' }} />
                   </div>
                 )}
@@ -68,24 +70,24 @@ export default function Onboarding() {
             ))}
           </div>
           <div className="text-center mt-4 flex items-center justify-center gap-2">
-            <span className="flex items-center gap-2 text-sm font-semibold">{STEPS[step-1].icon} {STEPS[step-1].title}</span>
-            <span className="text-muted-foreground text-xs ml-2 hidden md:inline">— {STEPS[step-1].desc}</span>
+            <span className="flex items-center gap-2 text-sm font-bold text-slate-900">{STEPS[step-1].icon} {STEPS[step-1].title}</span>
+            <span className="text-slate-500 text-xs hidden md:inline">— {STEPS[step-1].desc}</span>
           </div>
         </div>
 
         {/* Card */}
-        <div className="card p-8 animate-fade-in-up">
+        <div className="card bg-white border border-slate-200/90 shadow-xl p-8 rounded-3xl animate-fade-in-up">
           {step === 1 && (
             <div className="space-y-5">
-              <h2 className="text-2xl font-bold">Your Physical Baseline</h2>
-              <p className="text-muted-foreground text-sm">Help your twin understand your body's context. All fields optional.</p>
+              <h2 className="text-2xl font-black text-slate-900">Your Physical Baseline</h2>
+              <p className="text-slate-500 text-sm">Help your twin understand your body's context. All fields optional.</p>
               <div className="space-y-3">
                 <input type="number" placeholder="Age" className="input" />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <input type="number" placeholder="Height (cm)" className="input" />
                   <input type="number" placeholder="Weight (kg)" className="input" />
                 </div>
-                <select className="input appearance-none" style={{cursor:'pointer'}}>
+                <select className="input appearance-none cursor-pointer">
                   <option value="">Biological Sex (Optional)</option>
                   <option>Male</option>
                   <option>Female</option>
@@ -97,22 +99,22 @@ export default function Onboarding() {
 
           {step === 2 && (
             <div className="space-y-5">
-              <h2 className="text-2xl font-bold">What Are Your Goals?</h2>
-              <p className="text-muted-foreground text-sm">Select all that apply. Your twin will adapt its analysis lens accordingly.</p>
+              <h2 className="text-2xl font-black text-slate-900">What Are Your Goals?</h2>
+              <p className="text-slate-500 text-sm">Select all that apply. Your twin will adapt its analysis lens accordingly.</p>
               <div className="space-y-3">
                 {GOALS.map(goal => (
                   <button
                     key={goal}
                     onClick={() => toggleGoal(goal)}
-                    className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center justify-between ${
+                    className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center justify-between cursor-pointer ${
                       selectedGoals.includes(goal)
-                        ? 'border-primary bg-primary/5 text-foreground shadow-sm'
-                        : 'border-border bg-card text-muted-foreground hover:border-slate-300 hover:bg-slate-50'
+                        ? 'border-blue-600 bg-blue-50/60 text-slate-900 shadow-xs'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
-                    <span className="font-medium">{goal}</span>
+                    <span className="font-semibold text-sm">{goal}</span>
                     <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                      selectedGoals.includes(goal) ? 'border-primary bg-primary' : 'border-border'
+                      selectedGoals.includes(goal) ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
                     }`}>
                       {selectedGoals.includes(goal) && <Check className="w-3 h-3 text-white" />}
                     </div>
@@ -124,29 +126,29 @@ export default function Onboarding() {
 
           {step === 3 && (
             <div className="space-y-5">
-              <h2 className="text-2xl font-bold">Select Twin Mode</h2>
-              <p className="text-muted-foreground text-sm">This defines how your digital twin interprets and weights your metrics.</p>
+              <h2 className="text-2xl font-black text-slate-900">Select Twin Mode</h2>
+              <p className="text-slate-500 text-sm">This defines how your digital twin interprets and weights your metrics.</p>
               <div className="space-y-3">
                 {MODES.map(mode => (
                   <button
                     key={mode.id}
                     onClick={() => setSelectedMode(mode.id)}
-                    className={`w-full text-left p-4 rounded-xl border transition-all duration-200 ${
+                    className={`w-full text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
                       selectedMode === mode.id
-                        ? 'border-primary bg-primary/5 shadow-sm'
-                        : 'border-border bg-card hover:border-slate-300 hover:bg-slate-50'
+                        ? 'border-blue-600 bg-blue-50/60 shadow-xs'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center gap-4">
-                      <span className="text-muted-foreground">{mode.icon}</span>
+                      <span className={selectedMode === mode.id ? 'text-blue-600' : 'text-slate-500'}>{mode.icon}</span>
                       <div>
-                        <div className={`font-semibold ${selectedMode === mode.id ? 'text-primary' : 'text-foreground'}`}>{mode.id}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{mode.desc}</div>
+                        <div className={`font-bold text-sm ${selectedMode === mode.id ? 'text-blue-900' : 'text-slate-900'}`}>{mode.id}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{mode.desc}</div>
                       </div>
                       <div className={`ml-auto w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                        selectedMode === mode.id ? 'border-primary bg-primary' : 'border-border'
+                        selectedMode === mode.id ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
                       }`}>
-                        {selectedMode === mode.id && <div className="w-2 h-2 rounded-full bg-white" />}
+                        {selectedMode === mode.id && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                       </div>
                     </div>
                   </button>
@@ -157,73 +159,75 @@ export default function Onboarding() {
 
           {step === 4 && (
             <div className="space-y-5">
-              <h2 className="text-2xl font-bold">Consent & Safety</h2>
-              <div className="space-y-3 p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/20">
-                <div className="flex gap-4">
-                  <AlertTriangle className="text-yellow-400 w-6 h-6 shrink-0 mt-0.5" />
-                  <div className="text-sm text-muted-foreground space-y-2">
-                    <p><span className="text-foreground font-semibold">Not a medical device.</span> PhysioTwin provides estimates and screening signals only — not a clinical diagnosis or validated medical tool.</p>
-                    <p><span className="text-foreground font-semibold">Simulated sensors.</span> Wearable metrics are currently simulated until hardware is connected.</p>
-                    <p><span className="text-foreground font-semibold">On-device AI.</span> Your camera data is processed locally and never uploaded.</p>
+              <h2 className="text-2xl font-black text-slate-900">Consent & Safety</h2>
+              <div className="space-y-3 p-4 rounded-2xl bg-amber-50/80 border border-amber-200">
+                <div className="flex gap-3.5">
+                  <AlertTriangle className="text-amber-600 w-5 h-5 shrink-0 mt-0.5" />
+                  <div className="text-xs text-slate-700 space-y-2 leading-relaxed">
+                    <p><strong className="text-slate-900">Not a medical device.</strong> PhysioTwin provides screening signals and biomechanical estimates — not clinical diagnoses.</p>
+                    <p><strong className="text-slate-900">Simulated sensors.</strong> Wearable metrics are simulated until hardware sensors are connected.</p>
+                    <p><strong className="text-slate-900">On-device AI.</strong> Your camera feed is analyzed in real-time in your browser and never uploaded.</p>
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setConsented(!consented)}
-                className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center gap-3 ${
-                  consented ? 'border-green-500 bg-green-50 shadow-sm text-green-900' : 'border-border bg-card hover:border-slate-300 hover:bg-slate-50'
+                className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center gap-3 cursor-pointer ${
+                  consented ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-xs' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700'
                 }`}
               >
-                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                  consented ? 'border-green-500 bg-green-500' : 'border-border'
+                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                  consented ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300'
                 }`}>
-                  {consented && <Check className="text-white w-4 h-4 font-bold" />}
+                  {consented && <Check className="text-white w-3.5 h-3.5 font-bold" />}
                 </div>
-                <span className="text-sm font-semibold">I understand and consent to the above terms</span>
+                <span className="text-xs font-semibold">I understand and accept the PhysioTwin testing protocol.</span>
               </button>
             </div>
           )}
 
           {step === 5 && (
-            <div className="space-y-6 text-center">
-              <div className="w-20 h-20 mx-auto rounded-full bg-primary flex items-center justify-center shadow-lg text-white">
-                <Rocket className="w-10 h-10" />
+            <div className="space-y-6 text-center py-4">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto shadow-sm">
+                <Rocket className="w-8 h-8" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold">Initialize Your Twin</h2>
-                <p className="text-muted-foreground text-sm mt-2">
-                  We'll capture your first baseline session using your camera. A Sit-to-Stand test takes under 60 seconds.
-                </p>
+                <h2 className="text-2xl font-black text-slate-900">You're Ready to Boot</h2>
+                <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">Your physical digital twin baseline is calibrated and ready to initialize.</p>
               </div>
-              <div className="bg-secondary p-4 rounded-xl text-left space-y-2 border border-border">
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-3">Twin Configuration</div>
-                {selectedMode && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Mode</span><span className="font-medium">{selectedMode || 'General Human'}</span></div>}
-                {selectedGoals.length > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Goals</span><span className="font-medium">{selectedGoals.length} selected</span></div>}
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Sensor</span><span className="badge badge-yellow text-[10px]">Simulated</span></div>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Selected Mode</span>
+                  <span className="font-bold text-slate-900">{selectedMode || "General Human"}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Primary Goals</span>
+                  <span className="font-bold text-slate-900">{selectedGoals.join(", ") || "General Tracking"}</span>
+                </div>
               </div>
-              <button
-                onClick={() => setLocation('/dashboard')}
-                className="btn btn-cyan w-full py-4 text-base"
-              >
-                Launch Twin Dashboard →
-              </button>
             </div>
           )}
 
-          {/* Navigation buttons */}
-          <div className="flex gap-3 mt-8">
-            {step > 1 && (
-              <button onClick={prevStep} className="btn btn-secondary py-3 flex-1">
-                ← Back
-              </button>
-            )}
-            {step < 5 && (
-              <button
-                onClick={nextStep}
+          {/* Navigation Controls */}
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-100">
+            {step > 1 ? (
+              <button onClick={prevStep} className="btn btn-secondary text-xs py-2.5 px-5">Back</button>
+            ) : <div />}
+
+            {step < 5 ? (
+              <button 
+                onClick={nextStep} 
                 disabled={step === 4 && !consented}
-                className="btn btn-primary py-3 flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-primary text-xs py-2.5 px-6 shadow-md shadow-blue-500/25 disabled:opacity-40"
               >
-                {step === 4 ? 'I Agree →' : 'Continue →'}
+                Continue →
+              </button>
+            ) : (
+              <button 
+                onClick={() => setLocation('/twin')}
+                className="btn btn-primary text-xs py-2.5 px-8 shadow-md shadow-blue-500/25"
+              >
+                Launch Twin →
               </button>
             )}
           </div>

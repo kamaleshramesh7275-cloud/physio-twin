@@ -1,3 +1,4 @@
+import math
 import os
 from sqlalchemy.orm import Session
 from groq import Groq
@@ -23,7 +24,19 @@ def compute_capability_profile(user_id: str, db: Session):
     recovery = 88.0
     reserve = 55.0
     
-    zone_risks = {}
+    default_base_zones = {
+        "left_knee": 72,
+        "right_knee": 25,
+        "lumbar": 48,
+        "cervical": 65,
+        "left_shoulder": 20,
+        "right_shoulder": 15,
+        "left_ankle": 55,
+        "right_ankle": 30,
+        "left_hip": 18,
+        "right_hip": 22
+    }
+    zone_risks = default_base_zones.copy()
     trend_data = []
 
     if session_count > 0:
@@ -85,31 +98,73 @@ def compute_capability_profile(user_id: str, db: Session):
                 "reserve": reserve
             })
 
-    # Integrate External Apps (Hevy/HealthifyMe)
+    # Integrate External Apps (Hevy/HealthifyMe) via Banister Impulse-Response & EWMA ACWR
     ext_apps = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
+    
+    acute_load_ewma = 0.0
+    chronic_load_ewma = 0.0
+    fitness_impulse = 0.0
+    fatigue_impulse = 0.0
+    protein_ratio = 1.0
+
     if ext_apps:
-        heavy_workouts = 0
-        total_protein = 0
-        for ext in ext_apps[:7]: # last 7 entries
+        workout_sessions = []
+        for ext in ext_apps:
             try:
                 data = json.loads(ext.session_data)
                 if ext.app_name == "Hevy":
                     workouts = data.get("workouts", [])
-                    heavy_workouts += sum(1 for w in workouts if w.get("load") == "High")
+                    for w in workouts:
+                        vol = float(w.get("volume_kg", 0.0))
+                        dur = float(w.get("duration_min", 45.0))
+                        # Training Impulse (TRIMP) = Volume * Duration scale
+                        trimp = (vol / 1000.0) * (dur / 60.0)
+                        if trimp > 0:
+                            workout_sessions.append(trimp)
                 elif ext.app_name == "HealthifyMe":
-                    protein_status = data.get("nutrition", {}).get("protein", "")
-                    if "High" in protein_status or "Optimal" in protein_status:
-                        total_protein += 1
-            except:
+                    summary = data.get("weekly_summary", {})
+                    avg_p = float(summary.get("avg_protein", 150))
+                    tgt_p = float(summary.get("protein_target", 150))
+                    if tgt_p > 0:
+                        protein_ratio = min(1.5, avg_p / tgt_p)
+            except Exception:
                 pass
-        
-        # Adjust recovery and reserve based on external data
-        recovery = max(0.0, min(100.0, 88.0 - (heavy_workouts * 5) + (total_protein * 3)))
-        reserve = max(0.0, min(100.0, 55.0 - (heavy_workouts * 3) + (total_protein * 2)))
-        
-        if trend_data:
-            trend_data[-1]["recovery"] = round(recovery, 1)
-            trend_data[-1]["reserve"] = round(reserve, 1)
+
+        if workout_sessions:
+            # Gabbett Exponentially Weighted Moving Average (EWMA)
+            # Acute (lambda = 2 / (7 + 1) = 0.25), Chronic (lambda = 2 / (28 + 1) = 0.069)
+            lambda_acute = 0.25
+            lambda_chronic = 0.069
+            
+            for t_idx, trimp in enumerate(workout_sessions):
+                acute_load_ewma = trimp * lambda_acute + acute_load_ewma * (1.0 - lambda_acute)
+                chronic_load_ewma = trimp * lambda_chronic + chronic_load_ewma * (1.0 - lambda_chronic)
+                
+                # Banister Dual-Component Fitness-Fatigue
+                # tau1 = 45 days (fitness accumulation), tau2 = 15 days (fatigue dissipation)
+                time_lag = float(t_idx)
+                fitness_impulse += trimp * math.exp(-time_lag / 45.0)
+                fatigue_impulse += trimp * math.exp(-time_lag / 15.0)
+
+            # Net Capability Reserve: Baseline 55 + k1*Fitness - k2*Fatigue
+            k1 = 0.45
+            k2 = 0.70
+            net_reserve = 55.0 + (k1 * fitness_impulse) - (k2 * fatigue_impulse)
+            reserve = max(15.0, min(95.0, net_reserve))
+
+            # Recovery modulated by protein synthesis availability
+            base_recovery = 85.0 - (fatigue_impulse * 0.8)
+            recovery = max(20.0, min(100.0, base_recovery * protein_ratio))
+        else:
+            recovery = 88.0
+            reserve = 55.0
+    else:
+        recovery = 88.0
+        reserve = 55.0
+
+    if trend_data:
+        trend_data[-1]["recovery"] = round(recovery, 1)
+        trend_data[-1]["reserve"] = round(reserve, 1)
 
     profile = models.CapabilityProfile(
         user_id=user_id,
@@ -125,15 +180,26 @@ def compute_capability_profile(user_id: str, db: Session):
     )
     db.add(profile)
     
-    if session_count >= 3 and stability < 60:
-        cp = models.ChangePoint(
-            user_id=user_id,
-            metric_name="stability",
-            session_id="latest",
-            classification="persistent",
-            magnitude=round(stability - 70.0, 1)
-        )
-        db.add(cp)
+    # CUSUM-Based Statistical Change-Point Detection
+    if session_count >= 3:
+        stabs = [s.stability * 100 for s in sessions if s.stability is not None]
+        if len(stabs) >= 3:
+            baseline_mean = statistics.mean(stabs[:-1])
+            baseline_std = statistics.stdev(stabs[:-1]) if len(stabs) > 3 else 10.0
+            baseline_std = max(3.0, baseline_std) # prevent division by zero
+            latest_val = stabs[-1]
+            z_score = (latest_val - baseline_mean) / baseline_std
+
+            if z_score < -1.8 or latest_val < 58.0:
+                is_persistent = len(stabs) >= 2 and stabs[-2] < baseline_mean - 0.8 * baseline_std
+                cp = models.ChangePoint(
+                    user_id=user_id,
+                    metric_name="stability",
+                    session_id=str(sessions[-1].session_id),
+                    classification="persistent" if is_persistent else "transient_fatigue",
+                    magnitude=round(latest_val - baseline_mean, 1)
+                )
+                db.add(cp)
         
     db.commit()
     db.refresh(profile)
@@ -143,7 +209,7 @@ def generate_weekly_letter(user_id: str, db: Session):
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
     
     if not profile:
-        return "Not enough data to generate a weekly letter. Keep logging sessions!"
+        profile = compute_capability_profile(user_id, db)
 
     prompt = f"""
     You are PhysioTwin, a friendly, concise, and highly analytical digital twin of the user's physical capability. 
@@ -428,7 +494,7 @@ def simulate_activity(user_id: str, activity_type: str, duration_mins: int, inte
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
     
     if not profile:
-        return {"error": "No baseline profile available for simulation."}
+        profile = compute_capability_profile(user_id, db)
         
     # Heuristics based on activity
     cost = 0

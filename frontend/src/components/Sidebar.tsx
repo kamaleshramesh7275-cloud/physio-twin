@@ -8,7 +8,14 @@ import {
 
 function NavItem({ icon, label, href, active }: { icon: React.ReactNode; label: string; href: string; active?: boolean }) {
   return (
-    <Link href={href} className={`nav-link flex-col md:flex-row items-center justify-center min-w-[72px] md:min-w-0 px-1 md:px-3 py-2 ${active ? 'active text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+    <Link 
+      href={href} 
+      className={`nav-link flex-col md:flex-row items-center justify-center min-w-[72px] md:min-w-0 px-1 md:px-3 py-2 transition-all duration-150 ${
+        active 
+          ? 'active bg-blue-50 text-blue-600 font-semibold shadow-xs' 
+          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+      }`}
+    >
       <span className="mb-1 md:mb-0">{icon}</span>
       <span className="text-[10px] md:text-sm whitespace-nowrap">{label}</span>
     </Link>
@@ -18,7 +25,7 @@ function NavItem({ icon, label, href, active }: { icon: React.ReactNode; label: 
 function NavSection({ title }: { title: string }) {
   return (
     <div className="hidden md:block mt-6 mb-2 px-3">
-      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{title}</span>
+      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</span>
     </div>
   );
 }
@@ -27,10 +34,10 @@ export function Sidebar() {
   const [location] = useLocation();
   
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/30 backdrop-blur-2xl md:relative md:w-64 flex md:flex-col border-t md:border-t-0 md:border-r border-border/50 p-2 md:p-4 shrink-0 h-[72px] md:h-full overflow-x-auto md:overflow-y-auto pointer-events-auto scrollbar-hide">
-      <div className="hidden md:flex items-center gap-2 px-2 mb-4 mt-2 sticky top-0 bg-background/90 backdrop-blur z-10 py-2">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-xs font-black text-white shadow-md">PT</div>
-        <span className="font-black text-lg tracking-tight">PhysioTwin</span>
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl md:relative md:w-64 flex md:flex-col border-t md:border-t-0 md:border-r border-slate-200/80 p-2 md:p-4 shrink-0 h-[72px] md:h-full overflow-x-auto md:overflow-y-auto pointer-events-auto scrollbar-hide shadow-xs">
+      <div className="hidden md:flex items-center gap-2 px-2 mb-4 mt-2 sticky top-0 bg-white/95 backdrop-blur z-10 py-2 border-b border-slate-100">
+        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-xs font-black text-white shadow-sm shadow-blue-500/30">PT</div>
+        <span className="font-black text-lg tracking-tight text-slate-900">PhysioTwin</span>
       </div>
 
       <div className="flex justify-between md:justify-start md:flex-col w-full md:w-auto md:space-y-1 flex-1 pb-4">

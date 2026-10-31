@@ -4,28 +4,59 @@ import { onAuthStateChanged, signInWithPopup, signOut, GoogleAuthProvider, signI
 import type { User } from "firebase/auth";
 import { auth, googleProvider } from "../lib/firebase";
 
+export type AuthUser = User | {
+  uid: string;
+  email: string | null;
+  displayName?: string | null;
+  photoURL?: string | null;
+};
+
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   googleFitToken: string | null;
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (e: string, p: string) => Promise<void>;
   registerWithEmail: (e: string, p: string) => Promise<void>;
+  loginAsDemo: () => void;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    const saved = localStorage.getItem("physiotwin_demo_user");
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return null;
+  });
   const [googleFitToken, setGoogleFitToken] = useState<string | null>(() => {
     return localStorage.getItem("googleFitToken");
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const savedDemo = localStorage.getItem("physiotwin_demo_user");
+    if (savedDemo) {
+      try {
+        setUser(JSON.parse(savedDemo));
+        setLoading(false);
+      } catch (e) {}
+    }
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      if (currentUser) {
+        setUser(currentUser);
+        localStorage.removeItem("physiotwin_demo_user");
+      } else {
+        const saved = localStorage.getItem("physiotwin_demo_user");
+        if (saved) {
+          try { setUser(JSON.parse(saved)); } catch (e) {}
+        } else {
+          setUser(null);
+        }
+      }
       setLoading(false);
     });
     return unsubscribe;
@@ -63,14 +94,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginAsDemo = () => {
+    const demoUser = {
+      uid: "demo-athlete",
+      email: "demo@physiotwin.local",
+      displayName: "Demo Athlete",
+    };
+    setUser(demoUser);
+    localStorage.setItem("physiotwin_demo_user", JSON.stringify(demoUser));
+    setLoading(false);
+  };
+
   const logout = async () => {
-    await signOut(auth);
+    localStorage.removeItem("physiotwin_demo_user");
+    try {
+      await signOut(auth);
+    } catch (e) {}
+    setUser(null);
     setGoogleFitToken(null);
     localStorage.removeItem("googleFitToken");
   };
 
   return (
-    <AuthContext.Provider value={{ user, googleFitToken, loading, loginWithGoogle, loginWithEmail, registerWithEmail, logout }}>
+    <AuthContext.Provider value={{ user, googleFitToken, loading, loginWithGoogle, loginWithEmail, registerWithEmail, loginAsDemo, logout }}>
       {children}
     </AuthContext.Provider>
   );

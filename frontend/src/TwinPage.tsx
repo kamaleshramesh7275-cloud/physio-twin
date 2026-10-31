@@ -1,21 +1,35 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Activity, Camera, History, Clock, Brain, Settings, User,
+  Activity, Camera, History, Brain,
   AlertTriangle, TrendingUp, TrendingDown,
-  ChevronRight, ChevronLeft, BarChart2, Target, ShieldAlert
+  ChevronRight, BarChart2, Target, ShieldAlert, CheckCircle2,
+  Sparkles, Box
 } from "lucide-react";
 import HoloModel3D from "./HoloModel3D";
 import { Sidebar } from "./components/Sidebar";
 import type { ZoneId, ZoneRisk } from "./HoloModel3D";
 import { useAuth } from "./context/AuthContext";
-import { fetchGoogleFitData } from "./lib/googleFitApi";
+import { useAvatar } from "./AvatarContext";
+import { fetchGoogleHealthData } from "./lib/googleHealthApi";
 import { api } from "./api";
+import { useClinicInsights } from "./context/ClinicInsightsContext";
+import { SystemicInsightsPanel } from "./components/SystemicInsightsPanel";
+import { collectAllHeatSources, aggregateHeatSources } from "./lib/heatMapEngine";
+import { SelfReportPainModal } from "./components/SelfReportPainModal";
+import { auth } from "./firebase";
+import { BilateralSymmetryRadar } from "./components/BilateralSymmetryRadar";
+import { GRFEstimatorPanel } from "./components/GRFEstimatorPanel";
+import { SpinalSegmentationView, type SpinalSegmentData } from "./components/SpinalSegmentationView";
+import { ValgusVelocityAlert } from "./components/ValgusVelocityAlert";
+import { FormDecayTracker, type RepDecayData } from "./components/FormDecayTracker";
+
+import { captureHistoryStore } from "./lib/captureHistoryStore";
 
 // ── Zone risk colour helpers ───────────────────────────────
 function riskLabel(r: number) { return r < 35 ? "Healthy" : r < 55 ? "Watch" : r < 70 ? "Elevated" : "Critical"; }
 function riskColor(r: number) { return r < 35 ? "#10b981" : r < 55 ? "#f59e0b" : r < 70 ? "#f97316" : "#ef4444"; }
-function riskBg(r: number)    { return r < 35 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : r < 55 ? "bg-amber-500/15 text-amber-400 border-amber-500/30" : r < 70 ? "bg-orange-500/15 text-orange-400 border-orange-500/30" : "bg-red-500/15 text-red-400 border-red-500/30"; }
+function riskBg(r: number)    { return r < 35 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : r < 55 ? "bg-amber-50 text-amber-800 border-amber-200" : r < 70 ? "bg-orange-50 text-orange-800 border-orange-200" : "bg-rose-50 text-rose-700 border-rose-200"; }
 function overallScore(risk: ZoneRisk) {
   const vals = Object.values(risk).filter(v => v !== undefined) as number[];
   return vals.length ? Math.max(0, Math.round(100 - vals.reduce((a, b) => a + b, 0) / vals.length)) : 0;
@@ -30,50 +44,30 @@ const ALL_ZONES: ZoneId[] = [
 ];
 
 // ── Data types ────────────────────────────────────────────
-type SessionData    = { session: number; date: string; label: string; zones: ZoneRisk };
 type ProjectionFrame = { horizon: string; months: number; zones: ZoneRisk; withTreatment: ZoneRisk };
 
-// ── 8-session history ─────────────────────────────────────
-const DEMO_HISTORY: SessionData[] = [
-  { session:1, date:"Jul 1",  label:"Baseline",  zones:{ head:8,  neck:10, chest:12, lumbar:30, left_shoulder:18, right_shoulder:15, left_arm:10, right_arm:8,  left_forearm:10, right_forearm:8,  left_hip:22, right_hip:18, left_thigh:20, right_thigh:18, left_knee:45, right_knee:40, left_shin:14, right_shin:12, left_ankle:8,  right_ankle:7  }},
-  { session:2, date:"Jul 8",  label:"Week 2",    zones:{ head:8,  neck:10, chest:14, lumbar:33, left_shoulder:20, right_shoulder:15, left_arm:11, right_arm:8,  left_forearm:10, right_forearm:8,  left_hip:24, right_hip:19, left_thigh:22, right_thigh:18, left_knee:50, right_knee:43, left_shin:15, right_shin:12, left_ankle:9,  right_ankle:8  }},
-  { session:3, date:"Jul 15", label:"Week 3",    zones:{ head:9,  neck:11, chest:14, lumbar:35, left_shoulder:21, right_shoulder:16, left_arm:12, right_arm:9,  left_forearm:11, right_forearm:9,  left_hip:26, right_hip:20, left_thigh:24, right_thigh:19, left_knee:54, right_knee:46, left_shin:16, right_shin:13, left_ankle:10, right_ankle:8  }},
-  { session:4, date:"Jul 22", label:"Week 4",    zones:{ head:9,  neck:11, chest:15, lumbar:37, left_shoulder:22, right_shoulder:17, left_arm:12, right_arm:9,  left_forearm:11, right_forearm:9,  left_hip:28, right_hip:22, left_thigh:25, right_thigh:20, left_knee:58, right_knee:50, left_shin:16, right_shin:13, left_ankle:10, right_ankle:9  }},
-  { session:5, date:"Jul 29", label:"Week 5",    zones:{ head:10, neck:12, chest:16, lumbar:40, left_shoulder:24, right_shoulder:18, left_arm:14, right_arm:10, left_forearm:12, right_forearm:10, left_hip:30, right_hip:24, left_thigh:26, right_thigh:21, left_knee:62, right_knee:54, left_shin:17, right_shin:14, left_ankle:11, right_ankle:9  }},
-  { session:6, date:"Aug 1",  label:"Aug wk1",   zones:{ head:10, neck:12, chest:16, lumbar:42, left_shoulder:25, right_shoulder:19, left_arm:15, right_arm:11, left_forearm:12, right_forearm:10, left_hip:32, right_hip:26, left_thigh:27, right_thigh:22, left_knee:65, right_knee:57, left_shin:17, right_shin:14, left_ankle:11, right_ankle:10 }},
-  { session:7, date:"Aug 3",  label:"Aug wk2",   zones:{ head:11, neck:12, chest:17, lumbar:43, left_shoulder:26, right_shoulder:20, left_arm:15, right_arm:11, left_forearm:13, right_forearm:11, left_hip:33, right_hip:28, left_thigh:28, right_thigh:23, left_knee:68, right_knee:60, left_shin:18, right_shin:15, left_ankle:12, right_ankle:10 }},
-  { session:8, date:"Aug 4",  label:"Today",     zones:{ head:11, neck:13, chest:17, lumbar:45, left_shoulder:27, right_shoulder:21, left_arm:16, right_arm:12, left_forearm:13, right_forearm:11, left_hip:35, right_hip:30, left_thigh:29, right_thigh:24, left_knee:72, right_knee:64, left_shin:18, right_shin:15, left_ankle:12, right_ankle:10 }},
-];
-
-const CURRENT_RISK: ZoneRisk = DEMO_HISTORY[7].zones;
-
-// ── 3 projection frames ───────────────────────────────────
-const DEMO_PROJECTION: ProjectionFrame[] = [
-  { horizon:"In 3 Months", months:3, zones:{ head:11, neck:15, chest:19, lumbar:50, left_shoulder:29, right_shoulder:23, left_arm:17, right_arm:13, left_forearm:14, right_forearm:12, left_hip:40, right_hip:32, left_thigh:34, right_thigh:26, left_knee:80, right_knee:70, left_shin:20, right_shin:16, left_ankle:13, right_ankle:11 }, withTreatment:{ head:10, neck:12, chest:16, lumbar:38, left_shoulder:22, right_shoulder:18, left_arm:14, right_arm:11, left_forearm:12, right_forearm:10, left_hip:30, right_hip:26, left_thigh:26, right_thigh:22, left_knee:60, right_knee:55, left_shin:16, right_shin:14, left_ankle:11, right_ankle:10 } },
-  { horizon:"In 6 Months", months:6, zones:{ head:12, neck:18, chest:22, lumbar:58, left_shoulder:32, right_shoulder:26, left_arm:18, right_arm:14, left_forearm:15, right_forearm:13, left_hip:46, right_hip:36, left_thigh:39, right_thigh:29, left_knee:88, right_knee:76, left_shin:23, right_shin:18, left_ankle:14, right_ankle:12 }, withTreatment:{ head:10, neck:11, chest:15, lumbar:32, left_shoulder:19, right_shoulder:16, left_arm:12, right_arm:10, left_forearm:11, right_forearm:9, left_hip:25, right_hip:23, left_thigh:23, right_thigh:20, left_knee:50, right_knee:48, left_shin:15, right_shin:13, left_ankle:10, right_ankle:9 } },
-  { horizon:"In 1 Year",  months:12, zones:{ head:14, neck:22, chest:26, lumbar:70, left_shoulder:38, right_shoulder:30, left_arm:20, right_arm:15, left_forearm:16, right_forearm:14, left_hip:55, right_hip:42, left_thigh:46, right_thigh:33, left_knee:95, right_knee:85, left_shin:26, right_shin:20, left_ankle:15, right_ankle:13 }, withTreatment:{ head:9, neck:10, chest:13, lumbar:25, left_shoulder:16, right_shoulder:14, left_arm:10, right_arm:9, left_forearm:10, right_forearm:8, left_hip:20, right_hip:19, left_thigh:19, right_thigh:18, left_knee:40, right_knee:40, left_shin:13, right_shin:12, left_ankle:9, right_ankle:8 } },
-];
-
-const LEADERBOARD_DATA = [
-  { rank: 1, name: "Marcus T.", mark: 890, age: 31, tier: "Platinum" },
-  { rank: 2, name: "Sarah J.", mark: 845, age: 29, tier: "Gold" },
-  { rank: 3, name: "David O.", mark: 820, age: 30, tier: "Gold" },
-  { rank: 48, name: "Elena R.", mark: 690, age: 32, tier: "Silver" },
-];
-
 // ── Zone metadata (injuries, causes, actions) ─────────────
-const DETAILED_ZONE_META: Partial<Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }>> = {
-  left_knee:      { label:"Left Knee",      injuries:["Patellofemoral Stress","Valgus Overload"],  rootCause:"Quad weakness + hip abductor deficit causing 4.2° varus angle during loading.", immediateAction:"Eccentric quad protocol (3×10 step-downs). Ice 15 min post-session.", longTermRisk:"Without intervention: medial compartment OA onset risk within 18 months." },
-  right_knee:     { label:"Right Knee",     injuries:["Moderate Valgus Stress"],                   rootCause:"Compensatory loading from left-side weakness increasing right knee joint force.", immediateAction:"Hip abductor strengthening — clamshells 3×15, side-lying leg raises.", longTermRisk:"Risk escalates to match left knee severity within 3 months if untreated." },
-  lumbar:         { label:"Lower Back",     injuries:["Lumbar Instability","Flexion Intolerance"], rootCause:"Core bracing deficit (48%). Excessive anterior pelvic tilt in 6 of 8 sessions.", immediateAction:"Dead bug 3×10, prone cobra 3×15. Avoid loaded flexion.", longTermRisk:"Progressive disc loading risk. Probable L4/L5 irritation at current trajectory." },
-  left_hip:       { label:"Left Hip",       injuries:["Hip Flexor Tightness"],                     rootCause:"Prolonged sitting + hip capsule restriction detected in movement pattern.", immediateAction:"Hip 90/90 stretch 2×60s each side. Couch stretch daily.", longTermRisk:"Primary contributor to knee valgus and lumbar instability." },
-  right_hip:      { label:"Right Hip",      injuries:["Mild Hip Tightness"],                       rootCause:"Bilateral tightness. Right side within normal range.", immediateAction:"Pigeon pose 45s. Maintain bilateral mobility routine.", longTermRisk:"Low immediate risk. Monitor for asymmetry increase." },
-  left_shoulder:  { label:"Left Shoulder",  injuries:["Rotator Cuff Fatigue"],                     rootCause:"Left arm generates 12% less force than right — overhead loading imbalance.", immediateAction:"External rotation banding 3×15, face pulls 3×20.", longTermRisk:"Rotator cuff strain risk within 2 months if load increases." },
-  right_shoulder: { label:"Right Shoulder", injuries:["Dominant side mild overuse"],               rootCause:"Right shoulder compensating for left. Load symmetry 94%.", immediateAction:"Maintain current strengthening. Monitor symmetry weekly.", longTermRisk:"Stable. No significant escalation expected." },
-  chest:          { label:"Chest",          injuries:["Pec tightness"],                            rootCause:"Upper-cross syndrome pattern. Rounded shoulder posture detected.", immediateAction:"Doorway stretch 3×30s. Thoracic extension over foam roller.", longTermRisk:"Will worsen shoulder and neck symptoms if uncorrected." },
-  neck:           { label:"Neck",           injuries:["Forward Head Posture"],                     rootCause:"1.5cm anterior head shift. Linked to screen habits.", immediateAction:"Chin tucks 3×10, deep neck flexor strengthening.", longTermRisk:"Cervicogenic headache risk increases without postural correction." },
-  left_thigh:     { label:"Left Thigh",     injuries:["Quad Strength Deficit"],                    rootCause:"Left quad at 68% of right-side force — significant asymmetry.", immediateAction:"Eccentric step-downs left side, single-leg press 3×12.", longTermRisk:"Primary driver of left knee valgus. Priority for intervention." },
-  right_thigh:    { label:"Right Thigh",    injuries:["Compensatory Load"],                        rootCause:"Compensating for left deficit. Load within acceptable range.", immediateAction:"Continue bilateral strengthening.", longTermRisk:"Stable if left side improves." },
+const DETAILED_ZONE_META: Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }> = {
+  head:           { label:"Head & Skull",   injuries:["Cervicogenic Strain","Scalp Tension"],      rootCause:"Anterior head weight moment increasing cervical spine leverage.", immediateAction:"Suboccipital release 2×60s, posture re-alignment.", longTermRisk:"Chronic tension headaches and upper trapezius fatigue." },
+  neck:           { label:"Neck & Cervical Spine", injuries:["Forward Head Posture","C4/C5 Compression"], rootCause:"1.5cm anterior head shift. Linked to prolonged screen tilt.", immediateAction:"Chin tucks 3×10, deep neck flexor isometric holds.", longTermRisk:"Cervicogenic headache and spinal nerve root impingement." },
+  chest:          { label:"Chest & Pectorals", injuries:["Pec Tightness","Upper Cross Syndrome"], rootCause:"Rounded shoulder posture causing internal humerus rotation.", immediateAction:"Doorway stretch 3×30s, foam roller thoracic extension.", longTermRisk:"Persistent shoulder impingement and restricted respiratory mechanics." },
+  lumbar:         { label:"Lower Back (Lumbar)", injuries:["Lumbar Instability","Flexion Intolerance"], rootCause:"Core bracing deficit (48%). Excessive anterior pelvic tilt in loading.", immediateAction:"Dead bug 3×10, prone cobra 3×15. Avoid loaded flexion.", longTermRisk:"Progressive disc loading risk. Irritation at L4/L5 level." },
+  left_shoulder:  { label:"Left Shoulder",  injuries:["Rotator Cuff Fatigue","Impingement Risk"],  rootCause:"Left arm force deficit (12% less than right) during overhead presses.", immediateAction:"External rotation banding 3×15, face pulls 3×20.", longTermRisk:"Supraspinatus tendonitis risk within 2 months if uncorrected." },
+  right_shoulder: { label:"Right Shoulder", injuries:["Dominant Overuse Strain"],                  rootCause:"Right side compensating for left-side kinetic chain weakness.", immediateAction:"Scapular retraction squeezes 3×12, posterior capsule stretch.", longTermRisk:"Secondary rotator cuff wear due to asymmetric loading." },
+  left_arm:       { label:"Left Upper Arm", injuries:["Biceps Tendon Fatigue"],                   rootCause:"Over-reliance on elbow flexors during heavy pulling exercises.", immediateAction:"Eccentric biceps curls 3×12, bicipital groove massage.", longTermRisk:"Distal biceps tendon strain under peak load." },
+  right_arm:      { label:"Right Upper Arm", injuries:["Triceps Tendinitis"],                      rootCause:"Repetitive extension forces under high kinetic intensity.", immediateAction:"Triceps overhead mobility stretch 2×45s, foam roll lats.", longTermRisk:"Tendinopathy at olecranon insertion." },
+  left_forearm:   { label:"Left Forearm",   injuries:["Grip Fatigue","Flexor Tightness"],         rootCause:"Limited wrist extension ROM causing flexor over-activation.", immediateAction:"Forearm flexor/extensor stretches 2×30s, wrist circles.", longTermRisk:"Medial epicondylitis (Golfer's Elbow) development." },
+  right_forearm:  { label:"Right Forearm",  injuries:["Lateral Epicondylitis Strain"],             rootCause:"Excessive wrist extension during heavy gripping routines.", immediateAction:"Tyler Twist with Theraband FlexBar 3×15.", longTermRisk:"Lateral epicondylitis (Tennis Elbow) escalation." },
+  left_hip:       { label:"Left Hip",       injuries:["Hip Flexor Tightness","Capsular Restriction"], rootCause:"Prolonged sitting + hip capsule restriction in movement pattern.", immediateAction:"Hip 90/90 stretch 2×60s, couch stretch daily.", longTermRisk:"Primary contributor to knee valgus and lumbar instability." },
+  right_hip:      { label:"Right Hip",      injuries:["Gluteus Medius Weakness"],                  rootCause:"Bilateral tightness with right-side abductor firing lag.", immediateAction:"Clamshells 3×15, side-lying leg raises 3×12.", longTermRisk:"Asymmetric pelvic sway during single-leg support." },
+  left_thigh:     { label:"Left Thigh",     injuries:["Quad Strength Deficit"],                    rootCause:"Left quad at 68% of right-side peak force output.", immediateAction:"Eccentric step-downs left side, single-leg press 3×12.", longTermRisk:"Primary driver of left knee valgus. High priority." },
+  right_thigh:    { label:"Right Thigh",    injuries:["Hamstring Overuse Compensation"],           rootCause:"Compensating for left-side quad deficit during leg drive.", immediateAction:"Romanian deadlifts 3×10 focus on eccentric speed.", longTermRisk:"Hamstring strain risk during maximal deceleration." },
+  left_knee:      { label:"Left Knee",      injuries:["Patellofemoral Stress","Valgus Overload"],  rootCause:"Quad weakness + hip abductor deficit causing 4.2° varus angle.", immediateAction:"Eccentric quad protocol (3×10 step-downs). Ice 15 min.", longTermRisk:"Medial compartment OA onset risk within 18 months." },
+  right_knee:     { label:"Right Knee",     injuries:["Moderate Valgus Stress"],                   rootCause:"Compensatory loading from left-side weakness during squats.", immediateAction:"Hip abductor strengthening — clamshells 3×15.", longTermRisk:"Risk escalates to match left knee severity within 3 months." },
+  left_shin:      { label:"Left Shin",      injuries:["Tibialis Anterior Strain"],                 rootCause:"Early heel rise compensating for dorsiflexion restriction.", immediateAction:"Ankle dorsiflexion band pulls 3×15, calf foam rolling.", longTermRisk:"Medial Tibial Stress Syndrome (Shin Splints)." },
+  right_shin:     { label:"Right Shin",     injuries:["Mild Compartment Stress"],                  rootCause:"High ground reaction impact forces on firm surfaces.", immediateAction:"Soleus wall stretch 3×30s, toe raises 3×20.", longTermRisk:"Low immediate risk. Monitor foot strike mechanics." },
+  left_ankle:     { label:"Left Ankle",     injuries:["Dorsiflexion Deficit (14°)"],               rootCause:"Talocrural joint restriction following past inversion sprain.", immediateAction:"Ankle mobilization over toes 2×60s, calf stretch.", longTermRisk:"Forces proximal movement compensation at knee and hip." },
+  right_ankle:    { label:"Right Ankle",    injuries:["Subtalar Hypermobility"],                   rootCause:"Excessive pronation upon foot strike under heavy fatigue.", immediateAction:"Short foot exercise 3×10 holds, ankle eversion banding.", longTermRisk:"Arch collapse and plantar fascia irritation." },
 };
 
 const ZONE_META: Record<string, { label: string, desc: string, icon: any }> = {
@@ -102,12 +96,12 @@ function ScoreRing({ score, size }: { score: number, size: number }) {
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="absolute -rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={rad} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-white/10" />
+        <circle cx={size / 2} cy={size / 2} r={rad} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
         <circle cx={size / 2} cy={size / 2} r={rad} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
       </svg>
       <div className="text-center z-10">
-        <div className="font-black font-mono leading-none" style={{ fontSize: size * 0.22 }}>{score}</div>
-        <div className="text-muted-foreground uppercase tracking-widest" style={{ fontSize: size * 0.09 }}>Score</div>
+        <div className="font-black font-mono leading-none text-slate-900" style={{ fontSize: size * 0.22 }}>{score}</div>
+        <div className="text-slate-400 font-bold uppercase tracking-widest" style={{ fontSize: size * 0.09 }}>Score</div>
       </div>
     </div>
   );
@@ -119,85 +113,325 @@ export default function TwinPage() {
   const rawMode = location.replace('/', '') as "twin"|"history"|"projection";
   const mode = rawMode === "twin" ? "active" : rawMode;
 
-  const { user, googleFitToken } = useAuth();
+  const { user } = useAuth();
+  const { userSex, setUserSex, setUserHeight, setUserWeight } = useAvatar();
+  const { regionalInsights, systemicInsights, isLoading: insightsLoading } = useClinicInsights();
   
+  const [showCaptureToast, setShowCaptureToast] = useState(() => window.location.search.includes("captured=true"));
   const [selectedZone, setSelectedZone] = useState<ZoneId | null>(null);
+  const [viewMode, setViewMode] = useState<"scan" | "3d">("3d");
   const [histCursor, setHistCursor]     = useState(0);
   const [showTreatment, setShowTreatment] = useState(false);
-  const [syncedData, setSyncedData] = useState<any>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [projIdx, setProjIdx] = useState<number>(0);
 
   const [liveRisk, setLiveRisk] = useState<ZoneRisk>({
-    left_knee: 72, right_knee: 25, lumbar: 48, neck: 65, left_shoulder: 20, right_shoulder: 15, left_ankle: 55, right_ankle: 30, left_hip: 18, right_hip: 22
+    left_knee: 0, right_knee: 0, lumbar: 0, neck: 0, left_shoulder: 0, right_shoulder: 0, left_ankle: 0, right_ankle: 0, left_hip: 0, right_hip: 0
   });
+  const [liveConfidence, setLiveConfidence] = useState<Record<string, string>>({});
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const [projections, setProjections] = useState<ProjectionFrame[]>([]);
 
-  // Fetch Dashboard and History Data from API
+  const [scanIngestSummary, setScanIngestSummary] = useState<string | null>(null);
+  const [selfReportModalZone, setSelfReportModalZone] = useState<ZoneId | null>(null);
+  const [selfReportTrigger, setSelfReportTrigger] = useState(0);
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false);
+  const [scanFilter, setScanFilter] = useState<"biceps-curls" | "squats" | "all">("all");
+  const [deepMetrics, setDeepMetrics] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const uid = user?.uid || auth.currentUser?.uid || "demo_user";
+    api.getDeepInsights(uid).then(res => {
+      if (res && res.metrics) {
+        setDeepMetrics(res.metrics);
+        if (res.metrics.task_type) {
+          const t = res.metrics.task_type.toLowerCase();
+          if (t.includes("bicep") || t.includes("curl")) setScanFilter("biceps-curls");
+          else if (t.includes("squat")) setScanFilter("squats");
+        }
+      }
+    }).catch(() => {});
+  }, [user]);
+
+  const handleDeleteHistory = async () => {
+    setIsDeletingHistory(true);
+    try {
+      const uid = user?.uid || auth.currentUser?.uid || "demo_user";
+      await api.deleteCaptureHistory(uid);
+      if (uid !== "demo_user") {
+        await api.deleteCaptureHistory("demo_user").catch(() => {});
+      }
+      if (uid !== "dev-athlete") {
+        await api.deleteCaptureHistory("dev-athlete").catch(() => {});
+      }
+
+      // Purge session and local storage heat map & capture metrics
+      sessionStorage.removeItem("lastSession");
+      sessionStorage.removeItem("lastMetrics");
+      sessionStorage.removeItem("lastInsights");
+      sessionStorage.removeItem("lastAnnotatedImage");
+
+      localStorage.removeItem("pt_user_pain_zone");
+      localStorage.removeItem("pt_user_pain_level");
+      localStorage.removeItem("pt_self_reported_pain");
+      localStorage.removeItem("physiotwin_capture_insights_history");
+
+      captureHistoryStore.clearAll(uid);
+
+      setHistoryData([]);
+      setDynamicRisk(null);
+      setDeepMetrics({});
+      setLiveRisk({
+        head: 0, neck: 0, chest: 0, lumbar: 0,
+        left_shoulder: 0, right_shoulder: 0, left_arm: 0, right_arm: 0,
+        left_forearm: 0, right_forearm: 0, left_hip: 0, right_hip: 0,
+        left_thigh: 0, right_thigh: 0, left_knee: 0, right_knee: 0,
+        left_shin: 0, right_shin: 0, left_ankle: 0, right_ankle: 0
+      });
+      setSelectedZone(null);
+      setScanIngestSummary("All capture history, digital twin metrics, and heat map data completely wiped.");
+      setShowCaptureToast(true);
+      setShowDeleteModal(false);
+    } catch (err) {
+      console.error("Failed to delete capture history:", err);
+    } finally {
+      setIsDeletingHistory(false);
+    }
+  };
+
+  // Collect and aggregate all continuous heat sources
+  const lastSessionObj = JSON.parse(sessionStorage.getItem("lastSession") || "null");
+  const activeHeatSources = collectAllHeatSources({
+    regionalInsights,
+    userProfile: { painZone: localStorage.getItem("pt_user_pain_zone"), painLevel: localStorage.getItem("pt_user_pain_level") },
+    lastSession: lastSessionObj,
+  });
+
+  const aggregatedSummary = aggregateHeatSources(activeHeatSources);
+
+  // Map aggregated heat field severity percentages to dynamic risk map
+  const aggregatedRiskMap: ZoneRisk = { ...liveRisk };
+  for (const [zKey, summary] of Object.entries(aggregatedSummary)) {
+    aggregatedRiskMap[zKey as ZoneId] = summary.riskPercentage;
+  }
+
+  // Fetch Dashboard, History, and Projections from real API
   useEffect(() => {
     const loadData = async () => {
       try {
         const uid = user?.uid || "demo_user";
-        const [dash, hist] = await Promise.all([
-          api.getDashboard(uid),
-          api.getSessionHistory(uid)
+        const [dash, hist, proj] = await Promise.all([
+          api.getDashboard(uid).catch(e => { console.error(e); return { zone_risks: {} }; }),
+          api.getSessionHistory(uid).catch(e => { console.error(e); return []; }),
+          api.getDynamicProjections(uid).catch(e => { console.error(e); return []; }),
         ]);
-        if (dash.zone_risks) {
-          setLiveRisk(dash.zone_risks);
+
+        let initialRisk: ZoneRisk = dash.zone_risks || {};
+
+        // Ingest recent local posture scan if available in sessionStorage
+        const rawLastSession = sessionStorage.getItem("lastSession");
+        if (rawLastSession) {
+          try {
+            const ls = JSON.parse(rawLastSession);
+            const ingested: ZoneRisk = { ...initialRisk };
+            const summaryParts: string[] = [];
+
+            if (ls.postureScore !== undefined) {
+              summaryParts.push(`Posture Score: ${ls.postureScore}/100`);
+            }
+            if (ls.shoulderTilt !== undefined) {
+              const shoulderRisk = Math.min(100, Math.round(35 + (ls.shoulderTilt || 0) * 8.5));
+              ingested.left_shoulder = shoulderRisk;
+              ingested.right_shoulder = Math.max(25, shoulderRisk - 5);
+              summaryParts.push(`Shoulder Tilt: ${ls.shoulderTilt.toFixed(1)}°`);
+            }
+            if (ls.hipTilt !== undefined) {
+              const hipRisk = Math.min(100, Math.round(30 + (ls.hipTilt || 0) * 9.5));
+              ingested.left_hip = hipRisk;
+              ingested.right_hip = Math.max(20, hipRisk - 5);
+              ingested.lumbar = Math.min(100, Math.round(35 + (ls.hipTilt || 0) * 11));
+              summaryParts.push(`Hip Tilt: ${ls.hipTilt.toFixed(1)}°`);
+            }
+            if (ls.headForward !== undefined) {
+              ingested.neck = Math.min(100, Math.round(40 + (ls.headForward || 0) * 11.5));
+              summaryParts.push(`Head Shift: ${ls.headForward.toFixed(1)}cm`);
+            }
+            if (ls.rom !== undefined) {
+              if (ls.rom < 85 || (ls.symmetry && ls.symmetry < 0.90)) {
+                ingested.left_knee = Math.min(100, Math.round(75 + (1 - (ls.symmetry || 0.95)) * 100));
+                ingested.right_knee = Math.min(100, Math.round(60 + (1 - (ls.symmetry || 0.95)) * 80));
+                ingested.left_thigh = Math.min(100, Math.round(65 + (1 - (ls.symmetry || 0.95)) * 90));
+              }
+              summaryParts.push(`Knee ROM: ${Math.round(ls.rom)}°`);
+            }
+
+            initialRisk = ingested;
+            if (summaryParts.length > 0) {
+              setScanIngestSummary(summaryParts.join(" · "));
+            }
+          } catch (e) {
+            console.error("Failed parsing lastSession from sessionStorage", e);
+          }
         }
+
+        if (initialRisk) {
+          setLiveRisk(initialRisk);
+          const highest = Object.entries(initialRisk)
+            .filter(([_, v]) => typeof v === "number" && (v as number) > 0)
+            .sort((a, b) => (b[1] as number) - (a[1] as number))[0];
+          if (highest && highest[0]) {
+            setSelectedZone(highest[0] as ZoneId);
+          }
+        }
+        if (dash.zone_confidence) {
+          setLiveConfidence(dash.zone_confidence);
+        }
+        
+        if (!userSex) setUserSex("Male");
+        setUserHeight(178);
+        setUserWeight(75);
+
         if (hist && hist.length > 0) {
-          setHistoryData(hist.reverse()); // Chronological
+          setHistoryData(hist.reverse());
           setHistCursor(hist.length - 1);
+        }
+        if (proj && proj.length > 0) {
+          setProjections(proj);
         }
       } catch (e) {
         console.error("Failed to fetch Twin data", e);
       }
     };
     loadData();
-  }, [user]);
+  }, [user, selfReportTrigger]);
 
   const [dynamicRisk, setDynamicRisk] = useState<ZoneRisk | null>(null);
 
-  const handleSyncFit = async () => {
-    setIsSyncing(true);
-    try {
-      const data = await fetchGoogleFitData(googleFitToken || "dummy_simulation_token");
-      const updatedRisk = await api.calculateDynamicRisk(liveRisk, data);
-      
-      // Sync the parsed Hevy/HealthifyMe data to the backend for the Dashboard to use
-      const uid = user?.uid || "demo_user";
-      await api.syncExternalApps(uid, data.workouts, data.nutrition);
-      
-      setDynamicRisk(updatedRisk);
-      setSyncedData(data);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to sync data.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Mock projections
-  const DEMO_PROJECTION = [
-    {
-      horizon: "1 Month Forecast",
-      zones: { ...liveRisk, left_knee: Math.min(100, (liveRisk.left_knee || 0) + 8), lumbar: Math.min(100, (liveRisk.lumbar || 0) + 5) },
-      withTreatment: { ...liveRisk, left_knee: Math.max(0, (liveRisk.left_knee || 0) - 15), lumbar: Math.max(0, (liveRisk.lumbar || 0) - 10) }
-    }
-  ];
+  // Real projections from API (falls back to empty array until loaded)
+  const activeProjections: ProjectionFrame[] = projections.length > 0 ? projections : [];
 
   const currentHistoryItem = historyData.length > 0 ? historyData[histCursor] : null;
 
   const displayRisk: ZoneRisk =
-    mode === "active"     ? (dynamicRisk || liveRisk) :
-    mode === "history"    ? (currentHistoryItem ? { ...liveRisk, left_knee: currentHistoryItem.rom < 85 ? 80 : 40 } : liveRisk) : 
-    (showTreatment ? DEMO_PROJECTION[0].withTreatment : DEMO_PROJECTION[0].zones);
+    mode === "active"     ? (dynamicRisk || (Object.keys(aggregatedSummary).length > 0 ? aggregatedRiskMap : liveRisk)) :
+    mode === "history"    ? (currentHistoryItem ? { ...liveRisk, left_knee: currentHistoryItem.rom < 85 ? 80 : 40 } : liveRisk) :
+    activeProjections.length > 0
+      ? (showTreatment ? activeProjections[projIdx].withTreatment : activeProjections[projIdx].zones)
+      : liveRisk;
 
   const score      = overallScore(displayRisk);
   const zoneMeta   = selectedZone ? DETAILED_ZONE_META[selectedZone as ZoneId] : undefined;
   const basicMeta  = selectedZone ? ZONE_META[selectedZone] : undefined;
   const zoneRisk   = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
+
+  // ── Dynamic Biomechanical Telemetry Calculation ──────────────
+  const activeLatestCapture = captureHistoryStore.getLatest();
+  const activeZoneRisk = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
+  const isCleanState = Object.keys(aggregatedSummary).length === 0 && !lastSessionObj && !activeLatestCapture;
+
+  // 1. Dynamic Bilateral Symmetry Radar Joints
+  const dynamicSymmetryJoints = isCleanState
+    ? [
+        { jointName: "Hip Extension", leftAngle: 45, rightAngle: 45, leftVelocity: 120, rightVelocity: 120, unit: "deg" },
+        { jointName: "Knee Flexion", leftAngle: 125, rightAngle: 125, leftVelocity: 220, rightVelocity: 220, unit: "deg" },
+        { jointName: "Ankle Dorsiflexion", leftAngle: 22, rightAngle: 22, leftVelocity: 90, rightVelocity: 90, unit: "deg" },
+        { jointName: "Valgus Deviation", leftAngle: 1.2, rightAngle: 1.2, leftVelocity: 15, rightVelocity: 15, unit: "deg" },
+      ]
+    : [
+        {
+          jointName: scanFilter === "biceps-curls" ? "Elbow Flexion" : "Hip Extension",
+          leftAngle: Math.round(42 - (activeZoneRisk * 0.15)),
+          rightAngle: Math.round(48 + (activeZoneRisk * 0.08)),
+          leftVelocity: Math.round(110 + (activeZoneRisk * 0.5)),
+          rightVelocity: Math.round(135 + (activeZoneRisk * 0.4)),
+          unit: "deg"
+        },
+        {
+          jointName: scanFilter === "biceps-curls" ? "Shoulder Elevation" : "Knee Flexion",
+          leftAngle: Math.round(115 - (activeZoneRisk * 0.25)),
+          rightAngle: Math.round(128 + (activeZoneRisk * 0.1)),
+          leftVelocity: Math.round(210 + (activeZoneRisk * 0.8)),
+          rightVelocity: Math.round(260 + (activeZoneRisk * 0.5)),
+          unit: "deg"
+        },
+        {
+          jointName: scanFilter === "biceps-curls" ? "Wrist Pronation" : "Ankle Dorsiflexion",
+          leftAngle: Math.max(10, Math.round(18 - (activeZoneRisk * 0.1))),
+          rightAngle: Math.round(24 + (activeZoneRisk * 0.05)),
+          leftVelocity: Math.round(85 + (activeZoneRisk * 0.3)),
+          rightVelocity: Math.round(95 + (activeZoneRisk * 0.2)),
+          unit: "deg"
+        },
+        {
+          jointName: scanFilter === "biceps-curls" ? "Elbow Flare" : "Valgus Deviation",
+          leftAngle: parseFloat((2.1 + (activeZoneRisk * 0.08)).toFixed(1)),
+          rightAngle: parseFloat((1.5 + (activeZoneRisk * 0.02)).toFixed(1)),
+          leftVelocity: Math.round(45 + (activeZoneRisk * 1.2)),
+          rightVelocity: Math.round(35 + (activeZoneRisk * 0.3)),
+          unit: "deg"
+        },
+      ];
+
+  // 2. Dynamic GRF Estimator Panel
+  const userWeightKg = 74;
+  const dynamicPeakAccY = isCleanState
+    ? 0.5 // m/s^2 (clean baseline 1.05x BW)
+    : parseFloat((2.5 + (activeZoneRisk * 0.22) + (lastSessionObj?.hipTilt ? lastSessionObj.hipTilt * 0.8 : 0)).toFixed(1));
+
+  // 3. Dynamic Spinal Segmentation View
+  const cervicalAngle = isCleanState ? 10 : Math.round(14 + (displayRisk.neck ?? 0) * 0.2);
+  const thoracicAngle = isCleanState ? 25 : Math.round(32 + (displayRisk.chest ?? 0) * 0.2);
+  const lumbarAngle = isCleanState ? 18 : Math.round(20 + (displayRisk.lumbar ?? 0) * 0.28);
+
+  const dynamicSpinalSegments: SpinalSegmentData[] = [
+    {
+      region: "Cervical (Neck)",
+      currentAngle: cervicalAngle,
+      optimalRange: "0° - 15°",
+      status: cervicalAngle > 18 ? "Warning" : cervicalAngle > 15 ? "Watch" : "Optimal",
+      description: cervicalAngle > 15 ? `Forward head displacement detected (${cervicalAngle}° tilt).` : "Optimal cervical alignment."
+    },
+    {
+      region: "Thoracic (Upper Back)",
+      currentAngle: thoracicAngle,
+      optimalRange: "20° - 40°",
+      status: thoracicAngle > 42 ? "Warning" : thoracicAngle > 36 ? "Watch" : "Optimal",
+      description: thoracicAngle > 36 ? `Upper thoracic strain under load (${thoracicAngle}° angle).` : "Thoracic extension within normal limits."
+    },
+    {
+      region: "Lumbar (Lower Back)",
+      currentAngle: lumbarAngle,
+      optimalRange: "15° - 25°",
+      status: lumbarAngle > 25 ? "Warning" : lumbarAngle > 22 ? "Watch" : "Optimal",
+      description: lumbarAngle > 25 ? `Flexion threshold exceeded (${lumbarAngle}° angle). L4/L5 shear risk.` : "Lumbar lordosis well controlled."
+    }
+  ];
+
+  // 4. Dynamic Valgus Velocity Alert
+  const dynamicValgusVel = isCleanState ? 18 : Math.round(25 + (activeZoneRisk * 1.6) + ((displayRisk.left_knee ?? 0) * 1.1));
+  const dynamicValgusAccel = isCleanState ? 120 : Math.round(180 + (activeZoneRisk * 8.5));
+
+  // 5. Dynamic Fatigue Form Decay Tracker
+  const dynamicFormReps: RepDecayData[] = isCleanState
+    ? [
+        { repNumber: 1, symmetryScore: 98, valgusAngle: 1.1, repTempoSec: 1.8 },
+        { repNumber: 2, symmetryScore: 97, valgusAngle: 1.2, repTempoSec: 1.8 },
+        { repNumber: 3, symmetryScore: 96, valgusAngle: 1.2, repTempoSec: 1.9 },
+        { repNumber: 4, symmetryScore: 95, valgusAngle: 1.3, repTempoSec: 1.9 },
+        { repNumber: 5, symmetryScore: 95, valgusAngle: 1.4, repTempoSec: 2.0 },
+        { repNumber: 6, symmetryScore: 94, valgusAngle: 1.5, repTempoSec: 2.0 },
+        { repNumber: 7, symmetryScore: 93, valgusAngle: 1.6, repTempoSec: 2.1 },
+        { repNumber: 8, symmetryScore: 92, valgusAngle: 1.7, repTempoSec: 2.1 },
+      ]
+    : Array.from({ length: 8 }, (_, idx) => {
+        const repNumber = idx + 1;
+        const decayFactor = activeZoneRisk > 0 ? (activeZoneRisk * 0.35) : 15;
+        const score = Math.max(50, Math.round(96 - (idx * (decayFactor / 4))));
+        const valgus = parseFloat((1.5 + (idx * 0.8 * (decayFactor / 15))).toFixed(1));
+        const tempo = parseFloat((1.8 + (idx * 0.2)).toFixed(1));
+        return { repNumber, symmetryScore: score, valgusAngle: valgus, repTempoSec: tempo };
+      });
 
   const topRisk = ALL_ZONES
     .map(id => ({ id, risk: liveRisk[id] ?? 0 }))
@@ -206,71 +440,245 @@ export default function TwinPage() {
 
   const modeLabel =
     mode === "active"     ? "Active Sync" :
-    mode === "history"    ? `Session ${DEMO_HISTORY[histCursor].session} — ${DEMO_HISTORY[histCursor].date}` :
-    `${DEMO_PROJECTION[projIdx].horizon} ${showTreatment ? "(w/ treatment)" : "(no treatment)"}`;
+    mode === "history"    ? `Session ${histCursor + 1} — ${currentHistoryItem?.timestamp ? new Date(currentHistoryItem.timestamp).toLocaleDateString() : "—"}` :
+    activeProjections.length > 0
+      ? `${activeProjections[projIdx].horizon} ${showTreatment ? "(w/ treatment)" : "(no treatment)"}`
+      : "Projection Loading...";
+
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   return (
-    <div className="relative w-full h-screen text-foreground overflow-hidden bg-black font-sans">
+    <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-28 md:pb-0 bg-background relative selection:bg-blue-600 selection:text-white">
       
-      {/* ── 3D GLB Model ── */}
+      {/* ── 3D / Holographic Twin Model ── */}
       <HoloModel3D 
         riskData={displayRisk}
+        confidenceData={liveConfidence}
         selectedZone={selectedZone}
-        onZoneClick={(id) => setSelectedZone(prev => prev === id ? null : id)}
+        onZoneClick={(id) => {
+          setSelectedZone(prev => prev === id ? null : id);
+          setMobileDrawerOpen(true);
+        }}
+        onLogPainClick={(id) => setSelfReportModalZone(id)}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        regionalInsights={regionalInsights}
+        scanFilter={scanFilter}
+        sessionMetrics={deepMetrics}
       />
+      
+      {/* ── Clinical Pain-Map Legend ── */}
+      <div className="absolute bottom-20 md:bottom-6 left-3 md:left-[272px] pointer-events-auto z-20 bg-white/95 backdrop-blur-md border border-slate-200/90 p-3.5 rounded-2xl flex flex-col gap-2.5 shadow-xl w-60">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] text-slate-600 uppercase tracking-widest font-black flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" /> Clinical Pain Field
+          </div>
+          <span className="text-[9px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md">
+            {Object.keys(aggregatedSummary).length} Regions
+          </span>
+        </div>
+
+        {/* Continuous Color Gradient Bar */}
+        <div className="h-2 w-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 border border-slate-200 shadow-inner" />
+
+        <div className="flex justify-between text-[9px] font-bold text-slate-500">
+          <span className="text-emerald-700">Low (1-30%)</span>
+          <span className="text-amber-700">Mid (30-65%)</span>
+          <span className="text-rose-700">High (65-100%)</span>
+        </div>
+
+        <button
+          onClick={() => setSelfReportModalZone(selectedZone || "lumbar")}
+          className="mt-1 w-full py-1.5 px-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl text-blue-700 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+        >
+          + Log Patient Pain Score
+        </button>
+      </div>
 
       <Sidebar />
 
+      {/* ── Floating Lab Insights Panel — anchored beside the twin ── */}
+      {(systemicInsights.length > 0 || insightsLoading) && mode === "active" && (
+        <div
+          className="pointer-events-auto absolute left-[68px] md:left-[272px] top-1/2 -translate-y-1/2 z-20"
+          style={{ maxHeight: "70vh" }}
+        >
+          <div className="w-[200px] md:w-[220px] bg-white/95 backdrop-blur-xl border border-slate-200 rounded-2xl shadow-xl overflow-hidden flex flex-col" style={{ maxHeight: "70vh" }}>
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Lab Insights</span>
+              </div>
+              {systemicInsights.filter(m => m.latest_status === "high" || m.latest_status === "low" || m.latest_status === "flagged").length > 0 && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                  {systemicInsights.filter(m => m.latest_status === "high" || m.latest_status === "low" || m.latest_status === "flagged").length} flagged
+                </span>
+              )}
+            </div>
+            {/* Scrollable metrics */}
+            <div className="overflow-y-auto scrollbar-hide p-2 flex-1">
+              <SystemicInsightsPanel
+                metrics={systemicInsights}
+                isLoading={insightsLoading}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Drawer Trigger Button */}
+      <div className="md:hidden fixed bottom-20 left-3 z-30 pointer-events-auto">
+        <button
+          onClick={() => setMobileDrawerOpen(p => !p)}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-xl shadow-blue-600/30 border border-blue-500/50 cursor-pointer"
+        >
+          <BarChart2 className="w-4 h-4" />
+          {mobileDrawerOpen ? "Hide Metrics" : "View Diagnostics"}
+        </button>
+      </div>
+
       {/* ── Floating Controls Layer ── */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col md:flex-row md:pl-60">
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col md:flex-row md:pl-64 overflow-hidden">
         
         {/* Main Center Area (Controls overlay) */}
-        <div className="flex-1 flex flex-col relative pointer-events-none">
+        <div className="flex-1 min-w-0 flex flex-col relative pointer-events-none overflow-hidden">
           
-          <div className="pointer-events-auto flex items-center justify-end p-6 shrink-0 mt-4 mx-4">
-            
-            <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl pr-2 pl-4 py-1.5 shadow-2xl">
-              <div className="text-right">
-                <div className="text-[11px] font-medium text-muted-foreground">{modeLabel}</div>
-                <div className="text-sm font-black">Twin Score</div>
+          <div className="pointer-events-none flex items-center justify-between p-1 sm:p-2 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap z-30">
+            {/* View Mode Switcher + Live Camera CTA */}
+            <div className="flex items-center gap-2 flex-wrap pointer-events-auto">
+              <Link
+                href="/capture"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-500/20 border border-emerald-400/30 transition-all cursor-pointer shrink-0"
+              >
+                <Camera className="w-4 h-4" />
+                <span className="hidden sm:inline">Start Live Camera Scan</span>
+                <span className="sm:hidden">Camera Scan</span>
+              </Link>
+
+              <div className="bg-white/90 backdrop-blur-md border border-slate-200/80 p-1 rounded-2xl flex items-center gap-1 shadow-md shrink-0">
+                <button
+                  onClick={() => setViewMode("scan")}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    viewMode === "scan"
+                      ? "bg-blue-50 text-blue-700 border border-blue-200 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" /> Anatomy Scan
+                </button>
+                <button
+                  onClick={() => setViewMode("3d")}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    viewMode === "3d"
+                      ? "bg-blue-50 text-blue-700 border border-blue-200 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Box className="w-3.5 h-3.5 text-blue-600" /> 3D Mesh
+                </button>
               </div>
-              <ScoreRing score={score} size={54} />
+
+              {/* Limb Target Scan Selector */}
+              <div className="bg-white/90 backdrop-blur-md border border-slate-200/80 p-1 rounded-2xl flex items-center gap-1 shadow-md flex-wrap">
+                <button
+                  onClick={() => setScanFilter("squats")}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    scanFilter === "squats"
+                      ? "bg-purple-50 text-purple-700 border border-purple-200 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  🏋️ Squats
+                </button>
+                <button
+                  onClick={() => setScanFilter("biceps-curls")}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    scanFilter === "biceps-curls"
+                      ? "bg-amber-50 text-amber-800 border border-amber-200 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  💪 Bicep Curls
+                </button>
+                <button
+                  onClick={() => setScanFilter("all")}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    scanFilter === "all"
+                      ? "bg-blue-50 text-blue-700 border border-blue-200 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  🔄 All Limbs
+                </button>
+              </div>
+            </div>
+
+            {/* Twin Score & Notification */}
+            <div className="flex items-center gap-3 shrink-0 ml-auto pointer-events-auto">
+              {showCaptureToast && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center gap-3 shadow-xl animate-in fade-in slide-in-from-top-3 max-w-md">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div className="leading-snug">
+                    <div className="text-emerald-950 font-black">Posture Scan Ingested into Digital Twin!</div>
+                    <div className="text-[11px] font-normal text-emerald-800">
+                      {scanIngestSummary || "Digital Twin updated with your live joint angles and posture alignment scan."}
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowCaptureToast(false)} 
+                    className="ml-auto text-emerald-600 hover:text-emerald-900 p-1 transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-3 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl pr-2 pl-3 py-1 shadow-md shrink-0">
+                <div className="text-right">
+                  <div className="text-[10px] font-semibold text-slate-500">{modeLabel}</div>
+                  <div className="text-xs font-black text-slate-900">Twin Score</div>
+                </div>
+                <ScoreRing score={score} size={48} />
+              </div>
             </div>
           </div>
 
-          <div className="flex-1" />
+          <div className="flex-1 min-h-0" />
 
           {/* Bottom scrubbers */}
           {mode === "history" && (
-            <div className="pointer-events-auto m-6 p-5 bg-black/50 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl">
-              <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground mb-3">
-                <span>{DEMO_HISTORY[0].date}</span>
-                <span className="text-white text-sm bg-white/10 px-3 py-1 rounded-full">{DEMO_HISTORY[histCursor].label}</span>
-                <span>{DEMO_HISTORY[DEMO_HISTORY.length-1].date}</span>
+            <div className="pointer-events-auto m-4 p-4 bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-3xl shadow-xl">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-3">
+                <span>{historyData.length > 0 ? new Date(historyData[0].timestamp).toLocaleDateString() : "Start"}</span>
+                <span className="text-slate-900 font-bold text-xs bg-slate-100 border border-slate-200 px-3 py-1 rounded-full">
+                  Session {histCursor + 1}{currentHistoryItem?.task_type ? ` — ${currentHistoryItem.task_type}` : ""}
+                </span>
+                <span>{historyData.length > 0 ? new Date(historyData[historyData.length-1].timestamp).toLocaleDateString() : "Now"}</span>
               </div>
-              <input type="range" min={0} max={DEMO_HISTORY.length-1} value={histCursor}
-                onChange={e => setHistCursor(Number(e.target.value))} className="w-full accent-primary h-2 bg-white/10 rounded-lg appearance-none cursor-pointer" />
+              <input type="range" min={0} max={Math.max(0, historyData.length-1)} value={histCursor}
+                onChange={e => setHistCursor(Number(e.target.value))} className="w-full accent-blue-600 h-2 bg-slate-100 border border-slate-200 rounded-lg appearance-none cursor-pointer" />
             </div>
           )}
 
           {mode === "projection" && (
-            <div className="pointer-events-auto m-6 p-4 bg-background/80 backdrop-blur-2xl border border-border/50 rounded-2xl flex flex-wrap items-center gap-4 justify-center">
-              <div className="flex gap-2 bg-secondary/30 rounded-xl p-1 border border-border/40">
-                {DEMO_PROJECTION.map((p, i) => (
+            <div className="pointer-events-auto m-4 p-4 bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-2xl flex flex-wrap items-center gap-4 justify-center shadow-xl">
+              <div className="flex gap-2 bg-slate-100 rounded-xl p-1 border border-slate-200">
+                {activeProjections.map((p, i) => (
                   <button key={i} onClick={() => setProjIdx(i)}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all
-                      ${projIdx===i ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-white/5"}`}>
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer
+                      ${projIdx===i ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-white/50"}`}>
                     {p.horizon}
                   </button>
                 ))}
               </div>
-              <div className="w-px h-8 bg-border/50" />
+              <div className="w-px h-8 bg-slate-200" />
               <button onClick={() => setShowTreatment(p => !p)}
-                className={`flex items-center gap-3 px-5 py-2.5 rounded-lg text-sm font-medium border transition-all
+                className={`flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer
                   ${showTreatment
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
-                    : "bg-secondary/20 border-border/40 text-muted-foreground hover:text-foreground"}`}>
-                <div className={`w-2.5 h-2.5 rounded-full ${showTreatment ? "bg-emerald-500" : "bg-muted-foreground"}`} />
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-700 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900"}`}>
+                <div className={`w-2.5 h-2.5 rounded-full ${showTreatment ? "bg-emerald-500" : "bg-slate-400"}`} />
                 {showTreatment ? "With Physio Treatment" : "No Treatment (Decline)"}
               </button>
             </div>
@@ -278,107 +686,239 @@ export default function TwinPage() {
         </div>
 
         {/* ── Right Panel ── */}
-        <aside className="pointer-events-auto w-full md:w-[380px] bg-black/40 backdrop-blur-2xl border-l border-white/10 flex flex-col md:overflow-y-auto shrink-0 shadow-2xl">
+        <aside className={`pointer-events-auto ${mobileDrawerOpen ? 'fixed inset-x-0 bottom-0 max-h-[85vh] z-40 rounded-t-3xl border-t' : 'hidden'} md:flex md:relative md:max-h-none md:rounded-none md:border-t-0 w-full md:w-[340px] xl:w-[380px] bg-white/95 backdrop-blur-2xl md:border-l border-slate-200/90 flex-col h-full overflow-hidden shrink-0 min-w-0 shadow-2xl text-slate-900`}>
+          {/* Mobile Drawer Handle & Close */}
+          <div className="md:hidden flex items-center justify-between px-5 py-3.5 border-b border-slate-100 sticky top-0 bg-white z-10 shrink-0">
+            <div className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600" /> Biomechanical Insights
+            </div>
+            <button 
+              onClick={() => setMobileDrawerOpen(false)}
+              className="p-1 px-3 rounded-xl bg-slate-100 text-xs font-bold text-slate-700 hover:bg-slate-200 cursor-pointer"
+            >
+              Close ✕
+            </button>
+          </div>
+
           {/* ACTIVE MODE */}
           {mode === "active" && (
-            <div className="p-6 flex-1 overflow-y-auto scrollbar-hide">
-              
-              <div className="mb-6 flex flex-col gap-2">
-                <button 
-                  onClick={handleSyncFit}
-                  disabled={isSyncing}
-                  className="w-full flex items-center justify-center gap-2 bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 py-3 rounded-xl font-bold hover:bg-[#10b981]/30 transition-colors disabled:opacity-50"
+            <div className="p-4 sm:p-5 flex-1 overflow-y-auto min-h-0 space-y-4 pb-20 md:pb-8">
+              {/* Delete All Capture History Action Card */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-rose-50/80 border border-rose-200/80 rounded-2xl shadow-sm">
+                <div className="flex items-center gap-2 text-xs font-bold text-rose-800">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Capture & Heat Map Data</span>
+                </div>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="py-1.5 px-3 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded-xl text-rose-800 font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
                 >
-                  <Activity className="w-4 h-4" />
-                  {isSyncing ? "Syncing Data..." : "Sync Google Fit Data"}
+                  Delete All History
                 </button>
-                {syncedData && (
-                  <div className="p-3 bg-black/40 rounded-xl border border-white/5 text-xs text-muted-foreground">
-                    <p><strong className="text-white">Recent Workout:</strong> {syncedData.workouts[0]?.app} - {syncedData.workouts[0]?.name}</p>
-                    <p><strong className="text-white">Nutrition:</strong> {syncedData.nutrition.app} - {syncedData.nutrition.status} ({syncedData.nutrition.protein})</p>
-                    <p className="mt-1 text-[#f59e0b]">Dynamic Risk Adjusted for Recovery!</p>
-                  </div>
-                )}
               </div>
 
               {(zoneMeta || basicMeta) ? (
-                <div className="anim-up">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className="font-black text-xl tracking-tight">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${riskBg(zoneRisk)}`}>{riskLabel(zoneRisk)}</span>
-                        <span className="font-mono text-lg font-black" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}</span>
-                      </div>
-                    </div>
-                    <button onClick={() => setSelectedZone(null)} className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">✕</button>
-                  </div>
-                  <div className="h-2 bg-white/5 rounded-full mb-6 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
-                  </div>
-                  
-                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
-                    <div className="mb-5">
-                      <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-2">Active Issues</div>
-                      {zoneMeta.injuries.map(inj => (
-                        <div key={inj} className="flex items-center gap-3 text-sm font-medium mb-1.5 bg-white/5 px-3 py-2 rounded-lg">
-                          <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0" /><span>{inj}</span>
+                <div className="anim-up space-y-4">
+                  {/* Header & Score Bar */}
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Anatomical Region</div>
+                        <h2 className="font-black text-xl sm:text-2xl tracking-tight text-slate-900 break-words">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
+                        <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                          <span className={`text-[11px] font-black px-3 py-1 rounded-full border ${riskBg(zoneRisk)}`}>{riskLabel(zoneRisk)}</span>
+                          <span className="font-mono text-lg sm:text-xl font-black shrink-0" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}% Strain</span>
                         </div>
-                      ))}
+                      </div>
+                      <button onClick={() => setSelectedZone(null)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer shrink-0 mt-0.5">✕</button>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full mt-4 overflow-hidden border border-slate-200">
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
+                    </div>
+                  </div>
+
+                  {/* Contributing Pain Sources Breakdown */}
+                  {selectedZone && aggregatedSummary[selectedZone]?.sources && aggregatedSummary[selectedZone].sources.length > 0 && (
+                    <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                      <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2 flex items-center justify-between">
+                        <span>Contributing Pain Sources</span>
+                        <span className="text-[9px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {aggregatedSummary[selectedZone].sources.length} active
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {aggregatedSummary[selectedZone].sources.map(src => (
+                          <div key={src.id} className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-xs">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-bold text-slate-900 flex items-center gap-1.5 break-words">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${src.source === 'clinicInsight' ? 'bg-purple-500' : src.source === 'selfReportedPain' ? 'bg-amber-500 animate-pulse' : src.source === 'postureScan' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
+                                {src.label}
+                              </span>
+                              <span className="font-mono font-black text-amber-700 shrink-0 ml-2">
+                                {Math.round(src.intensity * 100)}%
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-600 leading-snug break-words">{src.detail}</div>
+                            <div className="text-[9px] text-slate-400 mt-1 font-mono">{src.timestamp}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => setSelfReportModalZone(selectedZone)}
+                        className="w-full mt-3 py-2 px-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl text-blue-700 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                      >
+                        + Update Self-Reported Pain
+                      </button>
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    {zoneMeta?.rootCause && (
-                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
-                        <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5" /> Diagnostic Reasoning (Hevy Data)
+                  {/* Active Issues */}
+                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
+                    <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                      <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2.5">Active Anatomical Issues</div>
+                      <div className="space-y-2">
+                        {zoneMeta.injuries.map(inj => (
+                          <div key={inj} className="flex items-center gap-3 text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200 px-3.5 py-2.5 rounded-xl break-words">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span className="break-words min-w-0 flex-1">{inj}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Diagnostic Reasoning */}
+                  {zoneMeta?.rootCause && (
+                    <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                      <div className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 shrink-0" /> Diagnostic Biomechanical Reasoning
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200/80 mb-2.5 break-words">
+                        {zoneMeta.rootCause}
+                      </p>
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs leading-relaxed break-words text-amber-900">
+                        <span className="text-amber-800 font-bold">Workout &amp; Motion Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Immediate Action */}
+                  {zoneMeta?.immediateAction && (
+                    <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                      <div className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
+                      </div>
+                      <p className="text-xs text-blue-900 bg-blue-50 border border-blue-200 p-3 rounded-xl leading-relaxed break-words">
+                        {zoneMeta.immediateAction}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Long Term Risk */}
+                  {zoneMeta?.longTermRisk && (
+                    <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                      <div className="text-[10px] font-black text-rose-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 shrink-0" /> Long-Term Risk if Ignored
+                      </div>
+                      <p className="text-xs text-rose-900 bg-rose-50 border border-rose-200 p-3 rounded-xl leading-relaxed break-words">
+                        {zoneMeta.longTermRisk}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Historical Log & Trend Section for Selected Body Part */}
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                    <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5 text-blue-600" /> Historical Log & Trend
+                      </span>
+                      <span className="text-[9px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                        {historyData.length > 0 ? `${historyData.length} Logs` : "3 Recent Logs"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {historyData.length > 0 ? (
+                        historyData.slice(-3).map((item, idx) => (
+                          <div key={idx} className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 flex justify-between items-center text-xs">
+                            <div>
+                              <div className="font-bold text-slate-800">
+                                {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : `Session ${idx + 1}`}
+                              </div>
+                              <div className="text-[10px] text-slate-500">{item.task_type || "Kinematic Posture Scan"}</div>
+                            </div>
+                            <div className="text-right font-mono">
+                              <span className="font-black text-amber-700 text-sm">{zoneRisk}% Strain</span>
+                              <div className="text-[9px] text-emerald-700 font-semibold">Recorded Session</div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-3.5 text-center bg-slate-50 border border-slate-200/80 rounded-xl text-slate-500 text-xs">
+                          No scan logs recorded for this zone yet. Start a camera capture to track historical trends.
                         </div>
-                        <p className="text-sm text-amber-100/70 leading-relaxed">
-                          {zoneMeta.rootCause} <br/><br/>
-                          <span className="text-amber-400 font-semibold">Hevy Log Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
-                        </p>
-                      </div>
-                    )}
-                    {zoneMeta?.immediateAction && (
-                      <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
-                        <div className="text-[10px] font-black text-primary uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                          <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
-                        </div>
-                        <p className="text-sm text-blue-100/70 leading-relaxed">{zoneMeta.immediateAction}</p>
-                      </div>
-                    )}
-                    {zoneMeta?.longTermRisk && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
-                        <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1.5">Long-Term Risk if Ignored</div>
-                        <p className="text-sm text-red-100/70 leading-relaxed">{zoneMeta.longTermRisk}</p>
-                      </div>
-                    )}
-                    {!zoneMeta && basicMeta && (
-                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                         <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Zone Overview</div>
-                         <p className="text-sm text-white/70 leading-relaxed">{basicMeta.desc}</p>
-                       </div>
-                    )}
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => setShowDeleteModal(true)}
+                      className="w-full mt-3 py-2 px-3 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl text-rose-700 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Delete All Capture History
+                    </button>
                   </div>
+
+                  {!zoneMeta && basicMeta && (
+                     <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm">
+                       <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Zone Overview</div>
+                       <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200">{basicMeta.desc}</p>
+                     </div>
+                  )}
                 </div>
               ) : (
                 <>
-                  <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-3">Highest Risk Zones</div>
-                  <p className="text-sm text-muted-foreground mb-6 leading-relaxed">Select any glowing red body part on the 3D model, or pick from the list below to see injury root causes and treatment plans.</p>
+                  <div className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3">Highest Risk Zones</div>
+                  <p className="text-sm text-slate-600 mb-6 leading-relaxed">Select any highlighted body part on the 3D model, or pick from the list below to see injury root causes and treatment plans.</p>
                   <div className="space-y-2">
                     {topRisk.map(({ id, risk }) => (
                       <button key={id} onClick={() => setSelectedZone(id)}
-                        className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-sm text-left transition-all border border-transparent hover:border-white/10">
-                        <div className="w-3 h-3 rounded-full shrink-0 shadow-[0_0_10px_currentColor]" style={{ background:riskColor(risk), color:riskColor(risk) }} />
-                        <span className="flex-1 font-bold">{ZONE_META[id]?.label ?? id.replace(/_/g," ")}</span>
+                        className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100/90 text-sm text-left transition-all border border-slate-200/70 hover:border-slate-300 shadow-xs cursor-pointer">
+                        <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ background:riskColor(risk), color:riskColor(risk) }} />
+                        <span className="flex-1 font-bold text-slate-800">{ZONE_META[id]?.label ?? id.replace(/_/g," ")}</span>
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-black text-lg" style={{ color:riskColor(risk) }}>{risk}</span>
-                          {risk >= 70 ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <TrendingUp className="w-4 h-4 text-amber-400" />}
+                          {risk >= 70 ? <AlertTriangle className="w-4 h-4 text-rose-600" /> : <TrendingUp className="w-4 h-4 text-amber-600" />}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
                       </button>
                     ))}
+                  </div>
+
+                  {/* 5 Biomechanical Capture Sub-Feature Panels */}
+                  <div className="space-y-4 border-t border-slate-200/80 pt-4 mt-6">
+                    <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5 mb-2">
+                      <Sparkles className="w-3.5 h-3.5" /> Biomechanical Telemetry Panels
+                    </div>
+                    <BilateralSymmetryRadar joints={dynamicSymmetryJoints} />
+                    <GRFEstimatorPanel userWeightKg={userWeightKg} peakAccelerationY={dynamicPeakAccY} />
+                    <SpinalSegmentationView segments={dynamicSpinalSegments} />
+                    <ValgusVelocityAlert 
+                      angularVelocityDegSec={dynamicValgusVel} 
+                      angularAccelDegSec2={dynamicValgusAccel}
+                      normalizedKamNmKg={lastSessionObj?.normalizedKamNmKg || parseFloat((0.85 + (activeZoneRisk * 0.015)).toFixed(2))} 
+                    />
+                    <FormDecayTracker reps={dynamicFormReps} />
+
+                    {/* Delete All Capture History Full-Width Button at Bottom of Right Panel */}
+                    <div className="pt-4 mt-6 border-t border-slate-200">
+                      <button
+                        onClick={() => setShowDeleteModal(true)}
+                        className="w-full py-3 px-4 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-2xl text-rose-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-rose-600" /> Delete All Capture History
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -388,34 +928,32 @@ export default function TwinPage() {
           {/* HISTORY MODE */}
           {mode === "history" && (
             <div className="p-6 flex-1 overflow-y-auto scrollbar-hide">
-              <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-2">Injury History Timeline</div>
-              <p className="text-sm text-muted-foreground mb-6 leading-relaxed">Scrub the timeline to see trauma events and long-term scar tissue accumulation.</p>
+              <div className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2">Injury History Timeline</div>
+              <p className="text-sm text-slate-600 mb-6 leading-relaxed">Scrub the timeline to see trauma events and long-term scar tissue accumulation.</p>
               <div className="space-y-3">
                 {(["left_knee","right_knee","lumbar","left_hip","left_shoulder"] as ZoneId[]).map(id => {
-                  const cur  = DEMO_HISTORY[histCursor].zones[id] ?? 0;
-                  const prev = histCursor > 0 ? (DEMO_HISTORY[histCursor-1].zones[id] ?? 0) : cur;
-                  const base = DEMO_HISTORY[0].zones[id] ?? 0;
-                  const delta = cur - prev;
-                  const totalDelta = cur - base;
+                  const cur  = currentHistoryItem ? (liveRisk[id] ?? 0) : (liveRisk[id] ?? 0);
+                  const delta = 0;
+                  const totalDelta = 0;
                   return (
-                    <div key={id} className="rounded-2xl bg-black/40 border border-white/5 p-4">
+                    <div key={id} className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 shadow-xs">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-2.5 h-2.5 rounded-full shrink-0 shadow-[0_0_8px_currentColor]" style={{ background:riskColor(cur), color:riskColor(cur) }} />
-                          <span className="text-sm font-bold">{ZONE_META[id]?.label}</span>
+                          <div className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ background:riskColor(cur), color:riskColor(cur) }} />
+                          <span className="text-sm font-bold text-slate-800">{ZONE_META[id]?.label}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-black text-lg" style={{ color:riskColor(cur) }}>{cur}</span>
                           {delta !== 0 && (
-                            <span className={`text-xs font-black flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ${delta>0 ? "bg-red-500/20 text-red-400" : "bg-emerald-500/20 text-emerald-400"}`}>
+                            <span className={`text-xs font-black flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ${delta>0 ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
                               {delta > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}{Math.abs(delta)}
                             </span>
                           )}
                         </div>
                       </div>
                       {totalDelta > 15 && (
-                        <div className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg mt-2 flex items-start gap-2 border border-red-500/20">
-                          <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <div className="text-xs text-rose-800 bg-rose-50 p-2.5 rounded-xl mt-2 flex items-start gap-2 border border-rose-200">
+                          <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-600" />
                           <span>Cumulative trauma detected. Scar tissue accumulating due to sustained load.</span>
                         </div>
                       )}
@@ -429,38 +967,39 @@ export default function TwinPage() {
           {/* PROJECTION MODE */}
           {mode === "projection" && (
             <div className="p-6 flex-1 overflow-y-auto scrollbar-hide">
-              <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-2">
+              <div className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2">
                 AI Risk Forecast
               </div>
-              <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+              <p className="text-sm text-slate-600 mb-6 leading-relaxed">
                 {showTreatment
                   ? "Projected trajectory with the recommended physiotherapy intervention plan."
                   : "Projected decline with NO change to current habits or training load."}
               </p>
               <div className="space-y-3">
                 {(["left_knee","lumbar","left_hip","right_knee","left_thigh"] as ZoneId[]).map(id => {
-                  const noTx   = DEMO_PROJECTION[projIdx].zones[id] ?? 0;
-                  const withTx = DEMO_PROJECTION[projIdx].withTreatment[id] ?? 0;
-                  const cur    = CURRENT_RISK[id] ?? 0;
+                  const proj   = activeProjections[projIdx];
+                  const noTx   = proj?.zones[id] ?? (liveRisk[id] ?? 0);
+                  const withTx = proj?.withTreatment[id] ?? Math.max(0, (liveRisk[id] ?? 0) - 10);
+                  const cur    = liveRisk[id] ?? 0;
                   const shown  = showTreatment ? withTx : noTx;
                   return (
-                    <div key={id} className="rounded-2xl bg-black/40 border border-white/5 p-4">
+                    <div key={id} className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 shadow-xs">
                       <div className="flex justify-between text-sm mb-3">
-                        <span className="font-bold">{ZONE_META[id]?.label}</span>
+                        <span className="font-bold text-slate-800">{ZONE_META[id]?.label}</span>
                         <div className="flex gap-4 items-center">
-                          <span className="text-muted-foreground text-xs font-medium">Today: <span className="font-mono font-bold" style={{color:riskColor(cur)}}>{cur}</span></span>
+                          <span className="text-slate-500 text-xs font-medium">Today: <span className="font-mono font-bold" style={{color:riskColor(cur)}}>{cur}</span></span>
                           <span className="font-mono font-black text-lg" style={{color:riskColor(shown)}}>{shown}</span>
                         </div>
                       </div>
-                      <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="absolute h-full rounded-full opacity-20" style={{ width:`${noTx}%`, background:"#ef4444" }} />
+                      <div className="relative h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="absolute h-full rounded-full opacity-30" style={{ width:`${noTx}%`, background:"#ef4444" }} />
                         <div className="h-full rounded-full transition-all duration-700" style={{ width:`${shown}%`, background: showTreatment ? "#10b981" : riskColor(noTx) }} />
                       </div>
-                      <div className={`text-xs mt-2.5 font-bold flex items-center gap-1.5 ${(shown-cur)>0 ? "text-red-400" : "text-emerald-400"}`}>
+                      <div className={`text-xs mt-2.5 font-bold flex items-center gap-1.5 ${(shown-cur)>0 ? "text-rose-700" : "text-emerald-700"}`}>
                         {(shown-cur) > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                         {shown-cur > 0 ? "+" : ""}{shown-cur} from today
                         {showTreatment && (
-                          <span className="ml-auto text-muted-foreground font-medium">
+                          <span className="ml-auto text-slate-500 font-medium">
                             saves {noTx-withTx} pts
                           </span>
                         )}
@@ -471,12 +1010,48 @@ export default function TwinPage() {
               </div>
             </div>
           )}
-
-          {/* LEADERBOARD MODE REMOVED */}
-
-          {/* Footer navigation removed as requested */}
         </aside>
       </div>
+
+      {/* ── Self-Reported Pain Modal ── */}
+      {selfReportModalZone && (
+        <SelfReportPainModal
+          zone={selfReportModalZone}
+          onClose={() => setSelfReportModalZone(null)}
+          onSaved={() => setSelfReportTrigger(prev => prev + 1)}
+        />
+      )}
+
+      {/* ── Delete All Capture History Confirmation Modal ── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-2 border border-rose-200">
+              <AlertTriangle className="w-6 h-6 text-rose-600" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 text-center">Delete All Capture History?</h3>
+            <p className="text-xs text-slate-600 text-center leading-relaxed">
+              This action will permanently wipe all markerless kinematic captures, posture scans, and biomechanical session logs from your Digital Twin database.
+            </p>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeletingHistory}
+                className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteHistory}
+                disabled={isDeletingHistory}
+                className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-rose-600/30"
+              >
+                {isDeletingHistory ? "Deleting..." : "Yes, Delete All"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

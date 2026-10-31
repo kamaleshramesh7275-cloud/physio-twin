@@ -21,7 +21,7 @@ function DeficitGauge({ label, value, target, unit, colorClass, bgClass, isOver 
         <span className={`text-2xl font-black font-mono-numbers ${colorClass}`}>{value}</span>
         <span className="text-xs text-muted-foreground mb-1">/ {target}{unit}</span>
       </div>
-      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-slate-100 border border-slate-200/50 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-1000 bg-current ${colorClass}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -36,7 +36,7 @@ function MicronutrientBar({ name, pct }: { name: string, pct: number }) {
         <span className="text-muted-foreground">{name}</span>
         <span className="font-mono-numbers font-bold" style={{ color }}>{pct}% RDA</span>
       </div>
-      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-slate-100 border border-slate-200/50 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
       </div>
     </div>
@@ -89,7 +89,7 @@ export function NutritionRecovery() {
           </div>
           {weeklySummary && (
             <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="badge bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+              <span className="badge bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
                 <TargetIcon className="w-3 h-3 mr-1" /> Targets hit: {weeklySummary.protein_target_hit_days}/7 days
               </span>
             </div>
@@ -122,15 +122,15 @@ export function NutritionRecovery() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               {/* AI Recovery Brief */}
-              <div className="glass-panel lg:col-span-2 bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border-emerald-500/20">
+              <div className="glass-panel lg:col-span-2 bg-emerald-50/70 border border-emerald-200 shadow-xs">
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center shrink-0">
-                    <Activity className="w-6 h-6 text-emerald-400" />
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                    <Activity className="w-6 h-6 text-emerald-700" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-bold">Metabolic Recovery Brief</h3>
-                      {latest?.food_quality_score >= 80 && <span className="badge bg-emerald-500/20 text-emerald-400 border-none text-[10px] px-1.5 py-0">Optimal</span>}
+                      {latest?.food_quality_score >= 80 && <span className="badge bg-emerald-500/20 text-emerald-700 border-none text-[10px] px-1.5 py-0">Optimal</span>}
                     </div>
                     <p className="text-sm text-muted-foreground leading-relaxed">
                       {latest?.recovery_note || "Nutrition data is synced and ready for analysis."}
@@ -143,7 +143,7 @@ export function NutritionRecovery() {
               <div className="glass-panel flex items-center gap-4">
                 <div className="relative w-16 h-16 shrink-0">
                   <svg className="w-16 h-16 -rotate-90" viewBox="0 0 80 80">
-                    <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
+                    <circle cx="40" cy="40" r="36" fill="none" stroke="#e2e8f0" strokeWidth="6" />
                     <circle cx="40" cy="40" r="36" fill="none" stroke={latest?.food_quality_score >= 80 ? "#10b981" : "#f59e0b"} strokeWidth="6"
                       strokeDasharray={226} strokeDashoffset={226 - (latest?.food_quality_score / 100) * 226} strokeLinecap="round" />
                   </svg>
@@ -153,7 +153,7 @@ export function NutritionRecovery() {
                 </div>
                 <div>
                   <div className="font-semibold text-sm flex items-center gap-1.5">
-                    <Star className="w-3.5 h-3.5 text-amber-400" /> Food Quality
+                    <Star className="w-3.5 h-3.5 text-amber-700" /> Food Quality
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-1">Based on micronutrient density, whole foods ratio, and fiber content.</p>
                 </div>
@@ -163,24 +163,24 @@ export function NutritionRecovery() {
             {/* Deficit/Surplus Gauges */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <DeficitGauge label="Calories" value={latest?.calories} target={CALORIE_TARGET} unit="kcal" 
-                colorClass={latest?.calories > CALORIE_TARGET ? "text-blue-400" : "text-emerald-400"} 
-                bgClass={latest?.calories > CALORIE_TARGET ? "bg-blue-500/5 border-blue-500/20" : "bg-emerald-500/5 border-emerald-500/20"} 
+                colorClass={latest?.calories > CALORIE_TARGET ? "text-blue-700" : "text-emerald-700"} 
+                bgClass={latest?.calories > CALORIE_TARGET ? "bg-blue-50/70 border-blue-200" : "bg-emerald-50/70 border-emerald-200"} 
                 isOver={latest?.calories > CALORIE_TARGET} />
                 
               <DeficitGauge label="Protein" value={latest?.protein} target={PROTEIN_TARGET} unit="g" 
-                colorClass={latest?.protein >= PROTEIN_TARGET ? "text-emerald-400" : "text-amber-400"} 
-                bgClass={latest?.protein >= PROTEIN_TARGET ? "bg-emerald-500/5 border-emerald-500/20" : "bg-amber-500/5 border-amber-500/20"} 
+                colorClass={latest?.protein >= PROTEIN_TARGET ? "text-emerald-700" : "text-amber-700"} 
+                bgClass={latest?.protein >= PROTEIN_TARGET ? "bg-emerald-50/70 border-emerald-200" : "bg-amber-50/70 border-amber-200"} 
                 isOver={latest?.protein >= PROTEIN_TARGET} />
                 
               <div className="glass-panel text-center py-4">
-                <Droplets className="w-4 h-4 mx-auto mb-1 text-cyan-400" />
-                <div className="text-xl font-black font-mono-numbers text-cyan-400">{(latest?.water_ml || 0) / 1000}L</div>
+                <Droplets className="w-4 h-4 mx-auto mb-1 text-cyan-700" />
+                <div className="text-xl font-black font-mono-numbers text-cyan-700">{(latest?.water_ml || 0) / 1000}L</div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Hydration ({latest?.hydration})</div>
               </div>
               
               <div className="glass-panel text-center py-4">
-                <Activity className="w-4 h-4 mx-auto mb-1 text-purple-400" />
-                <div className="text-xl font-black font-mono-numbers text-purple-400">{latest?.fiber || 0}g</div>
+                <Activity className="w-4 h-4 mx-auto mb-1 text-purple-700" />
+                <div className="text-xl font-black font-mono-numbers text-purple-700">{latest?.fiber || 0}g</div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Dietary Fiber</div>
               </div>
             </div>
@@ -190,16 +190,16 @@ export function NutritionRecovery() {
               {/* Protein Distribution */}
               <div className="glass-panel h-80 flex flex-col">
                 <div className="font-semibold text-sm mb-4 flex items-center gap-2">
-                  <Beef className="w-4 h-4 text-emerald-400" /> Protein Distribution (MPS Threshold)
+                  <Beef className="w-4 h-4 text-emerald-700" /> Protein Distribution (MPS Threshold)
                 </div>
                 <p className="text-xs text-muted-foreground mb-4">Muscle Protein Synthesis (MPS) maximizes at ~30g per meal.</p>
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={proteinDistribution} margin={{ left: -25 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis dataKey="time" stroke="#888" fontSize={10} tickLine={false} axisLine={false} />
                       <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `${v}g`} />
-                      <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: 'none', borderRadius: '8px' }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#0f172a', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }} cursor={{ fill: 'rgba(37,99,235,0.04)' }} />
                       <ReferenceLine y={30} stroke="#10b981" strokeDasharray="3 3" label={{ position: 'top', value: 'Optimal MPS', fill: '#10b981', fontSize: 10 }} />
                       <Bar dataKey="protein" radius={[4, 4, 0, 0]} maxBarSize={40}>
                         {proteinDistribution.map((entry: any, index: number) => (
@@ -243,7 +243,7 @@ export function NutritionRecovery() {
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-bold font-mono-numbers">{meal.kcal} <span className="text-[10px] text-muted-foreground">kcal</span></div>
-                      <div className="text-xs font-mono-numbers text-emerald-400">{meal.protein}g protein</div>
+                      <div className="text-xs font-mono-numbers text-emerald-700">{meal.protein}g protein</div>
                     </div>
                   </div>
                 ))}

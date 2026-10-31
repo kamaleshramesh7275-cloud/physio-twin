@@ -28,7 +28,7 @@ function ReadinessRing({ score }: { score: number }) {
     <div className="flex flex-col items-center gap-2">
       <div className="relative w-32 h-32">
         <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
-          <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" strokeWidth="8" />
           <circle cx="60" cy="60" r="52" fill="none" stroke={color} strokeWidth="8"
             strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
             className="transition-all duration-1000" />
@@ -50,7 +50,7 @@ function MuscleGroupBar({ label, pct, color }: { label: string; pct: number; col
         <span className="text-muted-foreground">{label}</span>
         <span className="font-mono-numbers font-bold" style={{ color }}>{pct}%</span>
       </div>
-      <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+      <div className="w-full h-2 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>
@@ -152,10 +152,10 @@ export function WorkoutStrain() {
           </div>
           {weeklyStats && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="badge bg-purple-500/15 text-purple-400 border-purple-500/30">
+              <span className="badge bg-purple-50 text-purple-700 border-purple-200">
                 <Dumbbell className="w-3 h-3 mr-1" /> {weeklyStats.total_sessions} sessions
               </span>
-              <span className="badge bg-amber-500/15 text-amber-400 border-amber-500/30">
+              <span className="badge bg-amber-50 text-amber-700 border-amber-200">
                 <Trophy className="w-3 h-3 mr-1" /> {weeklyStats.prs_this_week} PRs this week
               </span>
             </div>
@@ -173,11 +173,11 @@ export function WorkoutStrain() {
             {weeklyStats && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
-                  { label: "Total Volume", value: `${(weeklyStats.total_volume_kg / 1000).toFixed(1)}t`, color: "text-purple-400", icon: <Dumbbell className="w-4 h-4" /> },
-                  { label: "Total Sets", value: weeklyStats.total_sets, color: "text-blue-400", icon: <Activity className="w-4 h-4" /> },
-                  { label: "Avg Duration", value: `${weeklyStats.avg_session_duration}m`, color: "text-cyan-400", icon: <Clock className="w-4 h-4" /> },
-                  { label: "Avg HRV", value: `${weeklyStats.hrv_avg} ms`, color: "text-emerald-400", icon: <Heart className="w-4 h-4" /> },
-                  { label: "Avg Sleep", value: `${weeklyStats.sleep_avg_h}h`, color: "text-indigo-400", icon: <Zap className="w-4 h-4" /> },
+                  { label: "Total Volume", value: `${(weeklyStats.total_volume_kg / 1000).toFixed(1)}t`, color: "text-purple-600", icon: <Dumbbell className="w-4 h-4" /> },
+                  { label: "Total Sets", value: weeklyStats.total_sets, color: "text-blue-600", icon: <Activity className="w-4 h-4" /> },
+                  { label: "Avg Duration", value: `${weeklyStats.avg_session_duration}m`, color: "text-cyan-700", icon: <Clock className="w-4 h-4" /> },
+                  { label: "Avg HRV", value: `${weeklyStats.hrv_avg} ms`, color: "text-emerald-600", icon: <Heart className="w-4 h-4" /> },
+                  { label: "Avg Sleep", value: `${weeklyStats.sleep_avg_h}h`, color: "text-indigo-600", icon: <Zap className="w-4 h-4" /> },
                 ].map(k => (
                   <div key={k.label} className="glass-panel text-center py-4">
                     <div className={`flex justify-center mb-1.5 ${k.color}`}>{k.icon}</div>
@@ -205,10 +205,10 @@ export function WorkoutStrain() {
                 </div>
                 <ResponsiveContainer width="100%" height={180}>
                   <LineChart data={acwrData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                     <XAxis dataKey="week" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} domain={[0, 2]} />
-                    <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#0f172a', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }} />
                     <ReferenceLine y={1.5} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "Overreach", fill: "#ef4444", fontSize: 10, position: "right" }} />
                     <ReferenceLine y={1.3} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "Caution", fill: "#f59e0b", fontSize: 10, position: "right" }} />
                     <Line type="monotone" dataKey="ratio" name="ACWR" stroke="#a855f7" strokeWidth={3} dot={{ fill: "#a855f7", r: 5 }} activeDot={{ r: 7 }} />
@@ -230,7 +230,7 @@ export function WorkoutStrain() {
                         <span className="text-muted-foreground">{r.label}</span>
                         <span className="font-mono-numbers">{Math.round(r.val)}</span>
                       </div>
-                      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${r.val}%`, background: r.color }} />
                       </div>
                     </div>
@@ -249,11 +249,11 @@ export function WorkoutStrain() {
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart cx="50%" cy="50%" outerRadius="65%" data={loadMap}>
-                      <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                      <PolarAngleAxis dataKey="zone" tick={{ fill: '#888', fontSize: 11 }} />
+                      <PolarGrid stroke="#e2e8f0" />
+                      <PolarAngleAxis dataKey="zone" tick={{ fill: '#64748b', fontSize: 11 }} />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                       <Radar name="Load" dataKey="load" stroke="#a855f7" fill="#a855f7" fillOpacity={0.35} />
-                      <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: 'none', borderRadius: '8px', color: '#fff' }} formatter={(v: any) => [`${v}%`, "Load"]} />
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#0f172a', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }} formatter={(v: any) => [`${v}%`, "Load"]} />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -267,10 +267,10 @@ export function WorkoutStrain() {
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={volumeData} margin={{ left: -20, right: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis dataKey="day" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `${v}t`} />
-                      <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#0f172a', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
                         formatter={(v: any) => [`${v.toFixed(1)}t`, "Volume"]} />
                       <Bar dataKey="volume" radius={[6, 6, 0, 0]}>
                         {volumeData.map((entry: any, i: number) => (
@@ -295,7 +295,7 @@ export function WorkoutStrain() {
                           <Cell key={i} fill={splitColors[i % splitColors.length]} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: 'none', borderRadius: '8px', color: '#fff' }}
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#0f172a', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
                         formatter={(v: any, n: any) => [`${v}%`, n]} />
                     </PieChart>
                   </ResponsiveContainer>
@@ -341,7 +341,7 @@ export function WorkoutStrain() {
                           {r.pct >= 90 ? "✓ Ready" : `${r.hours}h remaining`}
                         </span>
                       </div>
-                      <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="w-full h-2.5 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
                         <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${r.pct}%`, background: r.color }} />
                       </div>
                     </div>
@@ -396,13 +396,13 @@ export function WorkoutStrain() {
             )}
 
             {/* Symmetry Warning */}
-            <div className="glass-panel bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/30">
+            <div className="glass-panel bg-amber-50/70 border border-amber-200 shadow-xs">
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
                   <Activity className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-amber-400 mb-1">Biomechanical Symmetry Alert</h3>
+                  <h3 className="font-bold text-amber-800 mb-1">Biomechanical Symmetry Alert</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     Your <strong className="text-foreground">left knee</strong> has appeared in affected zones {(zoneCounts["left_knee"] || 0) + 1}× this week vs {zoneCounts["right_knee"] || 0}× for the right.
                     This asymmetric loading pattern during bilateral movements may indicate a strength deficit or compensatory strategy. Consider unilateral isolation (Bulgarian Split Squats, single-leg leg press) before your next heavy leg session.

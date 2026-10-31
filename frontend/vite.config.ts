@@ -44,6 +44,14 @@ export default defineConfig({
       '/reports': {
         target: 'http://localhost:8000',
         changeOrigin: true
+      },
+      '/sensors': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/users': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
       }
     }
   }

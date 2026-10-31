@@ -131,28 +131,59 @@ class SyncFitRequest(BaseModel):
 @app.post("/analytics/dynamic-risk")
 def calculate_dynamic_risk(req: SyncFitRequest):
     updated_risk = req.base_risk.copy()
-    fit_data = req.fit_data
+    fit_data = req.fit_data or {}
     
-    workouts = fit_data.get("workouts", [])
-    nutrition = fit_data.get("nutrition", {})
+    workouts = fit_data.get("workouts", []) if isinstance(fit_data, dict) else []
+    nutrition = fit_data.get("nutrition", {}) if isinstance(fit_data, dict) else {}
     
-    has_heavy_legs = any(
-        "Leg Day" in w.get("name", "") and w.get("load") == "High" 
-        for w in workouts
-    )
-    has_low_protein = "Low" in nutrition.get("protein", "")
+    # 1. Nutrition recovery modifier
+    avg_protein = 150
+    has_low_protein = False
+    if isinstance(nutrition, dict):
+        has_low_protein = "Low" in str(nutrition.get("protein", ""))
+        p_val = nutrition.get("protein")
+        if isinstance(p_val, (int, float)):
+            avg_protein = p_val
+    elif isinstance(nutrition, list) and len(nutrition) > 0:
+        protein_vals = [n.get("protein", 150) for n in nutrition if isinstance(n, dict) and isinstance(n.get("protein"), (int, float))]
+        if protein_vals:
+            avg_protein = sum(protein_vals) / len(protein_vals)
+            has_low_protein = avg_protein < 130
+        else:
+            has_low_protein = any("Low" in str(n.get("protein", "")) for n in nutrition if isinstance(n, dict))
     
-    if has_heavy_legs and has_low_protein:
-        updated_risk["lumbar"] = min(100, updated_risk.get("lumbar", 0) + 35)
-        updated_risk["left_knee"] = min(100, updated_risk.get("left_knee", 0) + 25)
-        updated_risk["right_knee"] = min(100, updated_risk.get("right_knee", 0) + 30)
-        updated_risk["left_thigh"] = min(100, updated_risk.get("left_thigh", 0) + 15)
-        
+    protein_deficit_multiplier = 1.35 if has_low_protein or avg_protein < 125 else 1.0
+
+    # 2. Workout kinetic chain strain mapping
+    if isinstance(workouts, list):
+        for w in workouts:
+            if not isinstance(w, dict):
+                continue
+            load = str(w.get("load", "Medium")).lower()
+            w_name = str(w.get("name", "")).lower()
+            
+            base_strain = 22 if "high" in load else 14 if "medium" in load else 6
+            effective_strain = round(base_strain * protein_deficit_multiplier)
+            
+            affected = w.get("affectedZones", [])
+            if not affected:
+                if "leg" in w_name or "squat" in w_name:
+                    affected = ["left_knee", "right_knee", "lumbar", "left_thigh", "right_thigh"]
+                elif "pull" in w_name or "deadlift" in w_name or "back" in w_name:
+                    affected = ["lumbar", "neck", "left_shoulder", "right_shoulder", "left_arm", "right_arm"]
+                elif "push" in w_name or "chest" in w_name or "press" in w_name:
+                    affected = ["chest", "left_shoulder", "right_shoulder"]
+            
+            for zone in affected:
+                if isinstance(zone, str):
+                    cur = updated_risk.get(zone, 15)
+                    updated_risk[zone] = min(100, cur + effective_strain)
+                    
     return updated_risk
 
 class SyncExternalAppsRequest(BaseModel):
-    workouts: list
-    nutrition: dict
+    workouts: Optional[Any] = None
+    nutrition: Optional[Any] = None
 
 @app.post("/analytics/external-apps/{user_id}")
 def sync_external_apps(user_id: str, req: SyncExternalAppsRequest, db: Session = Depends(get_db)):
@@ -208,7 +239,7 @@ def ingest_vision_session(session: VisionSessionCreate, db: Session = Depends(ge
 def get_session_history(user_id: str, db: Session = Depends(get_db)):
     sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).all()
     return [{
-        "id": s.id,
+        "id": s.session_id,
         "timestamp": s.timestamp.isoformat(),
         "task_type": s.task_type,
         "rom": s.rom,
@@ -222,9 +253,7 @@ def get_session_history(user_id: str, db: Session = Depends(get_db)):
 def get_dashboard(user_id: str, db: Session = Depends(get_db)):
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
     if not profile:
-        return AnalyticsDashboardResponse(
-            mobility=50, stability=50, quality=50, cardio=50, recovery=50, reserve=50, confidence="Low"
-        )
+        profile = compute_capability_profile(user_id, db)
     
     cp = db.query(models.ChangePoint).filter(models.ChangePoint.user_id == user_id).order_by(models.ChangePoint.detected_at.desc()).first()
     alert = None
@@ -309,14 +338,15 @@ async def analyze_medical_report(user_id: str, file: UploadFile = File(...), db:
         "recommendation": "Avoid high-impact axial loading. Prescribe stabilization protocol."
     }
 
-    # 3. Update the user's base ZoneRisk profile
-    user_zones = db.query(models.ZoneRisk).filter(models.ZoneRisk.user_id == user_id).first()
-    if not user_zones:
-        user_zones = models.ZoneRisk(user_id=user_id)
-        db.add(user_zones)
+    # 3. Update the user's latest CapabilityProfile zone_risks
+    profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
+    if not profile:
+        profile = compute_capability_profile(user_id, db)
     
-    # Spike the risk for the affected zone
-    setattr(user_zones, diagnosis["zone"], diagnosis["severity"])
+    import json
+    current_zones = json.loads(profile.zone_risks) if profile.zone_risks else {}
+    current_zones[diagnosis["zone"]] = diagnosis["severity"]
+    profile.zone_risks = json.dumps(current_zones)
     db.commit()
 
     return {
@@ -520,3 +550,137 @@ def get_external_apps(user_id: str, db: Session = Depends(get_db)):
         {"app_name": e.app_name, "session_data": json.loads(e.session_data), "timestamp": e.timestamp.isoformat()} 
         for e in entries
     ]
+
+@app.get("/analytics/projections/{user_id}")
+def get_dynamic_projections(user_id: str, db: Session = Depends(get_db)):
+    import math
+    import json as _json
+
+    cp = db.query(models.CapabilityProfile)\
+        .filter(models.CapabilityProfile.user_id == user_id)\
+        .order_by(models.CapabilityProfile.timestamp.desc()).first()
+
+    neutral = {
+        "left_knee": 20, "right_knee": 20, "lumbar": 20, "cervical": 15, "neck": 15,
+        "left_shoulder": 15, "right_shoulder": 15, "left_ankle": 15, "right_ankle": 15,
+        "left_hip": 15, "right_hip": 15, "head": 10, "chest": 15, "left_arm": 10,
+        "right_arm": 10, "left_forearm": 10, "right_forearm": 10, "left_thigh": 15,
+        "right_thigh": 15, "left_shin": 10, "right_shin": 10
+    }
+
+    if not cp:
+        return [
+            {"horizon": "In 3 Months", "months": 3, "zones": neutral, "withTreatment": neutral},
+            {"horizon": "In 6 Months", "months": 6, "zones": neutral, "withTreatment": neutral},
+            {"horizon": "In 1 Year",   "months": 12, "zones": neutral, "withTreatment": neutral},
+        ]
+
+    base_zones = _json.loads(cp.zone_risks) if cp.zone_risks else neutral
+
+    # Multi-Tissue Classification
+    TENDON_LIGAMENT = {"left_knee", "right_knee", "left_ankle", "right_ankle", "left_shoulder", "right_shoulder"}
+    CARTILAGE_DISC = {"lumbar", "neck", "cervical"}
+
+    # Extract ACWR & Nutrition modifier from external app sessions
+    acwr = 1.0
+    protein_ratio = 1.0
+    ext_sessions = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).all()
+    for ext in ext_sessions:
+        try:
+            s_data = _json.loads(ext.session_data)
+            if ext.app_name == "Hevy":
+                stats = s_data.get("weekly_stats", {})
+                if "acwr" in stats:
+                    acwr = float(stats["acwr"])
+            elif ext.app_name == "HealthifyMe":
+                summary = s_data.get("weekly_summary", {})
+                avg_p = summary.get("avg_protein", 150)
+                target_p = summary.get("protein_target", 150)
+                if target_p > 0:
+                    protein_ratio = avg_p / target_p
+        except Exception:
+            pass
+
+    # Biological rate parameters:
+    # 1. ACWR Load Spike multiplier (Gabbett Sweet Spot: 0.8-1.3)
+    load_multiplier = 0.85 if 0.8 <= acwr <= 1.3 else max(1.0, 1.0 + (acwr - 1.3) * 1.5)
+    
+    # 2. Nutrition repair gating
+    nutri_factor = 0.70 if protein_ratio < 0.85 else 1.15 if protein_ratio >= 1.0 else 1.0
+
+    # 3. Palmgren-Miner Cumulative Cyclic Damage & Bayesian Posterior Updating
+    # Evidence likelihood: ACWR spike, low recovery reserve, high movement asymmetry
+    prior_overuse_prob = 0.22 # General population athletic baseline
+    likelihood_ratio = 1.0
+
+    if acwr > 1.4:
+        likelihood_ratio *= 2.85 # Gabbett Relative Risk for ACWR > 1.4
+    elif acwr < 0.8:
+        likelihood_ratio *= 1.35 # Undertraining risk spike upon reload
+
+    rec_val = cp.recovery or 70.0
+    if rec_val < 60.0:
+        likelihood_ratio *= 1.80 # Cellular recovery deficit
+    
+    qual_val = cp.movement_quality or 85.0
+    if qual_val < 80.0:
+        likelihood_ratio *= 2.10 # Biomechanical asymmetry shear
+
+    # Bayesian posterior odds = prior odds * likelihood_ratio
+    prior_odds = prior_overuse_prob / (1.0 - prior_overuse_prob)
+    posterior_odds = prior_odds * likelihood_ratio
+    posterior_injury_prob = min(0.96, posterior_odds / (1.0 + posterior_odds))
+
+    def project_biological(months: int, treat: bool) -> dict:
+        result = {}
+        for z, current in neutral.items():
+            v0 = float(base_zones.get(z, current))
+            
+            # Palmgren-Miner tissue-specific cyclic endurance threshold
+            if z in TENDON_LIGAMENT:
+                k_tx = 0.22      # Tendon remodeling rate (~120d half-life)
+                lambda_decline = 0.28
+                target_floor = 6.0
+                damage_mod = 1.25 # Tendons highly vulnerable to cyclic shear
+            elif z in CARTILAGE_DISC:
+                k_tx = 0.12      # Cartilage/disc avascular rate (~300d half-life)
+                lambda_decline = 0.19
+                target_floor = 10.0
+                damage_mod = 1.40 # Cartilage avascularity accumulates wear
+            else:
+                k_tx = 0.55      # Muscle vascular rate (~28d half-life)
+                lambda_decline = 0.35
+                target_floor = 5.0
+                damage_mod = 0.85 # Muscle tissue regenerates rapidly
+
+            if treat:
+                # Exponential biological remodeling with treatment & exercise therapy
+                remodel_extent = 1.0 - math.exp(-k_tx * nutri_factor * months)
+                val = max(target_floor, v0 - (v0 - target_floor) * remodel_extent)
+            else:
+                # Palmgren-Miner cyclic accumulation of microtrauma under load
+                # Scaled by Bayesian posterior injury probability
+                cumulative_cycles = months * 12.0 # approx 12 heavy sessions per month
+                cyclic_damage_factor = 1.0 - math.exp(- (cumulative_cycles * damage_mod * posterior_injury_prob) / 45.0)
+                decline_extent = 1.0 - math.exp(-lambda_decline * load_multiplier * months)
+                combined_risk_factor = max(decline_extent, cyclic_damage_factor)
+                val = min(100.0, v0 + (100.0 - v0) * combined_risk_factor * 0.85)
+
+            result[z] = round(val, 1)
+        return result
+
+    return [
+        {"horizon": "In 3 Months",  "months": 3,  "zones": project_biological(3, False),  "withTreatment": project_biological(3, True)},
+        {"horizon": "In 6 Months",  "months": 6,  "zones": project_biological(6, False),  "withTreatment": project_biological(6, True)},
+        {"horizon": "In 1 Year",    "months": 12, "zones": project_biological(12, False), "withTreatment": project_biological(12, True)},
+    ]
+
+@app.delete("/sessions/history/{user_id}")
+def delete_session_history(user_id: str, db: Session = Depends(get_db)):
+    db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.ChangePoint).filter(models.ChangePoint.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.TwinNote).filter(models.TwinNote.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "deleted", "message": f"All sessions and twin history deleted for user {user_id}"}

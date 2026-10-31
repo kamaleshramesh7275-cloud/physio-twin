@@ -30,8 +30,7 @@ export default function SimulatorPanel({
         intensity
       });
       simResult = res;
-    } catch (e) {
-      console.error(e);
+    } catch {
       // Fallback if no network
       const cost = duration * 0.8;
       simResult = {
@@ -51,12 +50,12 @@ export default function SimulatorPanel({
   };
 
   return (
-    <div className="bg-card rounded-xl border border-border p-4 shadow-sm h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-4">
-        <Target className="w-5 h-5 text-primary" />
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm h-full flex flex-col">
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+        <Target className="w-5 h-5 text-blue-600" />
         <div>
-          <div className="text-sm font-bold">What-If Simulator</div>
-          <div className="text-xs text-muted-foreground">Test activities against your twin</div>
+          <div className="text-sm font-bold text-slate-900">What-If Fatigue Simulator</div>
+          <div className="text-xs text-slate-500">Test physical demands against your twin</div>
         </div>
       </div>
 
@@ -64,11 +63,11 @@ export default function SimulatorPanel({
         {/* Controls */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1 block">Activity</label>
+            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-1.5 block">Activity</label>
             <select 
               value={activity}
               onChange={e => setActivity(e.target.value)}
-              className="w-full bg-muted border border-border rounded-lg p-2 text-xs focus:outline-none"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-600 cursor-pointer"
             >
               <option>Running</option>
               <option>Weightlifting</option>
@@ -77,11 +76,11 @@ export default function SimulatorPanel({
             </select>
           </div>
           <div>
-            <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-1 block">Intensity</label>
+            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-1.5 block">Intensity</label>
             <select 
               value={intensity}
               onChange={e => setIntensity(e.target.value)}
-              className="w-full bg-muted border border-border rounded-lg p-2 text-xs focus:outline-none"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-600 cursor-pointer"
             >
               <option>Light</option>
               <option>Moderate</option>
@@ -91,61 +90,61 @@ export default function SimulatorPanel({
         </div>
 
         <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Duration</label>
-            <span className="text-xs font-mono-numbers">{duration} mins</span>
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Duration</label>
+            <span className="text-xs font-mono-numbers font-bold text-slate-900">{duration} mins</span>
           </div>
           <input 
             type="range" 
             min="5" max="120" step="5"
             value={duration}
             onChange={e => setDuration(parseInt(e.target.value))}
-            className="w-full"
+            className="w-full cursor-pointer"
           />
         </div>
 
         <button 
           onClick={handleSimulate}
           disabled={loading}
-          className="w-full py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+          className="btn btn-primary w-full py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 disabled:opacity-50"
         >
-          {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Play className="w-3 h-3 fill-current" />}
-          Run Simulation
+          {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+          Run Biomechanical Simulation
         </button>
 
         {/* Results */}
         {result && (
-          <div className="mt-4 pt-4 border-t border-border animate-fade-in space-y-3">
-            <div className="text-xs font-semibold text-center mb-2">Projected Impact</div>
+          <div className="mt-4 pt-4 border-t border-slate-100 animate-fade-in space-y-3">
+            <div className="text-xs font-bold text-slate-800 text-center mb-2">Projected Impact on Twin</div>
             
-            <div>
-              <div className="flex justify-between text-[10px] uppercase text-muted-foreground font-bold mb-1">
-                <span>Reserve Drop</span>
-                <span className="text-red-400">-{result.cost.toFixed(1)}</span>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <div className="flex justify-between text-[10px] uppercase text-slate-500 font-bold mb-1">
+                <span>Reserve Depletion</span>
+                <span className="text-rose-600 font-mono font-bold">-{result.cost.toFixed(1)}%</span>
               </div>
-              <div className="flex items-center gap-2 text-xs font-mono-numbers">
-                <span className="text-muted-foreground line-through">{result.original.reserve.toFixed(1)}%</span>
-                <span>→</span>
-                <span className="font-bold">{result.simulated.reserve.toFixed(1)}%</span>
+              <div className="flex items-center justify-between text-xs font-mono-numbers">
+                <span className="text-slate-400 line-through">{result.original.reserve.toFixed(1)}%</span>
+                <span className="text-slate-400">→</span>
+                <span className="font-bold text-slate-900">{result.simulated.reserve.toFixed(1)}%</span>
               </div>
             </div>
 
-            <div>
-              <div className="flex justify-between text-[10px] uppercase text-muted-foreground font-bold mb-1">
-                <span>Recovery Score</span>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <div className="flex justify-between text-[10px] uppercase text-slate-500 font-bold mb-1">
+                <span>Recovery Score Impact</span>
               </div>
-              <div className="flex items-center gap-2 text-xs font-mono-numbers">
-                <span className="text-muted-foreground line-through">{result.original.recovery.toFixed(1)}%</span>
-                <span>→</span>
-                <span className={`font-bold ${result.simulated.recovery < 50 ? 'text-red-400' : 'text-amber-400'}`}>
+              <div className="flex items-center justify-between text-xs font-mono-numbers">
+                <span className="text-slate-400 line-through">{result.original.recovery.toFixed(1)}%</span>
+                <span className="text-slate-400">→</span>
+                <span className={`font-bold ${result.simulated.recovery < 50 ? 'text-rose-600' : 'text-amber-600'}`}>
                   {result.simulated.recovery.toFixed(1)}%
                 </span>
               </div>
             </div>
             
             {result.simulated.reserve < 20 && (
-              <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-lg text-[10px] text-red-500 font-medium">
-                ⚠️ Warning: This activity will deeply deplete your capability reserve. High injury risk.
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-medium leading-relaxed">
+                ⚠️ <strong>Overreach Warning:</strong> This activity will critically deplete your reserve capacity below 20%. Elevated tendon strain risk.
               </div>
             )}
           </div>
