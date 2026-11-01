@@ -12,94 +12,87 @@ import {
   RotateCcw,
   Sliders,
   Layers,
-  Flame,
   Play,
   Pause,
-  Sparkles,
   Compass,
-  ArrowUpRight
+  ArrowRight,
+  Maximize2
 } from "lucide-react";
 
 type SkinMode = "ecorche" | "cyber" | "realistic";
 
-interface JointPinProps {
+// ── Minimalist 3D Joint Marker (Sleek Beacon, No Giant Blocking Cards) ─────────
+function SleekJointBeacon({
+  position,
+  label,
+  value,
+  status,
+  isSelected,
+  onClick,
+}: {
   position: [number, number, number];
-  title: string;
-  metric: string;
+  label: string;
+  value: string;
   status: "critical" | "warning" | "optimal";
-  detail: string;
-  isOpen: boolean;
-  onToggle: () => void;
-}
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  const dotColor = {
+    critical: "bg-red-500",
+    warning: "bg-amber-500",
+    optimal: "bg-emerald-500",
+  }[status];
 
-function FloatingJointPin({ position, title, metric, status, detail, isOpen, onToggle }: JointPinProps) {
-  const colorMap = {
-    critical: "bg-red-500 border-red-400 text-red-400 shadow-red-500/40",
-    warning: "bg-amber-500 border-amber-400 text-amber-400 shadow-amber-500/40",
-    optimal: "bg-emerald-500 border-emerald-400 text-emerald-400 shadow-emerald-500/40",
-  };
-
-  const badgeColor = {
-    critical: "bg-red-950/90 border-red-500/50 text-red-200",
-    warning: "bg-amber-950/90 border-amber-500/50 text-amber-200",
-    optimal: "bg-emerald-950/90 border-emerald-500/50 text-emerald-200",
-  };
+  const ringBorder = {
+    critical: "border-red-400 text-red-300",
+    warning: "border-amber-400 text-amber-300",
+    optimal: "border-emerald-400 text-emerald-300",
+  }[status];
 
   return (
-    <Html position={position} center distanceFactor={4.5} zIndexRange={[100, 0]}>
-      <div className="relative group cursor-pointer select-none">
-        {/* Pulsing 3D Target Reticle */}
-        <button
-          onClick={onToggle}
-          className="relative flex items-center justify-center w-6 h-6 rounded-full bg-black/80 border border-white/20 backdrop-blur-md hover:scale-125 transition-transform"
-        >
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${colorMap[status].split(" ")[0]}`} />
-          <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${colorMap[status].split(" ")[0]}`} />
-        </button>
+    <Html position={position} center distanceFactor={5} zIndexRange={[50, 0]}>
+      <div 
+        onClick={onClick}
+        className="flex items-center gap-1.5 cursor-pointer group select-none pointer-events-auto"
+      >
+        {/* Pulsing Beacon Dot */}
+        <div className="relative flex items-center justify-center w-5 h-5 rounded-full bg-black/80 border border-white/20 backdrop-blur-md group-hover:scale-125 transition-transform">
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-70 ${dotColor}`} />
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${dotColor}`} />
+        </div>
 
-        {/* Hover / Active Telemetry Callout */}
-        <div
-          className={`absolute left-7 top-1/2 -translate-y-1/2 w-48 pointer-events-auto rounded-xl border p-2.5 shadow-2xl backdrop-blur-xl transition-all duration-300 ${badgeColor[status]} ${
-            isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto"
-          }`}
-        >
-          <div className="flex items-center justify-between text-[10px] font-mono font-bold uppercase tracking-wider mb-1">
-            <span>{title}</span>
-            <span className="font-extrabold">{metric}</span>
-          </div>
-          <p className="text-[10px] text-zinc-300 leading-tight">{detail}</p>
+        {/* Compact Micro-Tag (Only shows compact text, never blocks body) */}
+        <div className={`px-2 py-0.5 rounded-md bg-black/80 border backdrop-blur-md text-[10px] font-mono whitespace-nowrap shadow-lg transition-all ${
+          isSelected ? `${ringBorder} bg-black/95 scale-105` : "border-zinc-800 text-zinc-400 opacity-80 group-hover:opacity-100"
+        }`}>
+          <span className="font-semibold">{label}: </span>
+          <span className="font-bold text-white">{value}</span>
         </div>
       </div>
     </Html>
   );
 }
 
-// ── Realistic 3D Human Body Model Component ──────────────────────────────────
-function AnatomicalHumanoidMesh({
+// ── 3D Anatomical Humanoid Mesh with Correct Vertical Centering ──────────────
+function FullHumanoidRig({
   skinMode,
   squatDepth,
-  selectedPin,
-  setSelectedPin,
+  selectedJoint,
+  setSelectedJoint,
 }: {
   skinMode: SkinMode;
-  squatDepth: number; // 0 (standing) to 1 (deep squat)
-  selectedPin: string | null;
-  setSelectedPin: (pin: string | null) => void;
+  squatDepth: number;
+  selectedJoint: string;
+  setSelectedJoint: (joint: string) => void;
 }) {
   const obj = useLoader(OBJLoader, "/models/FinalBaseMesh.obj");
-
   const meshRef = useRef<THREE.Group>(null);
-  const uniformsRef = useRef({
-    uTime: { value: 0 },
-    uHeatValgus: { value: 0.8 },
-    uHeatLumbar: { value: 0.5 },
-  });
 
-  // Calculate dynamic joint coordinates based on squatDepth
-  const kneeY = 0.48 - squatDepth * 0.08;
-  const leftKneeX = 0.12 - squatDepth * 0.04; // Inward valgus collapse in 3D
-  const lumbarY = 1.12 - squatDepth * 0.09;
-  const lumbarZ = 0.05 + squatDepth * 0.06; // Forward pitch
+  // Dynamic Joint Coordinates (anatomically accurate to OBJ proportions)
+  const kneeY = 0.48 - squatDepth * 0.07;
+  const leftKneeX = 0.12 - squatDepth * 0.035; // Inward valgus drift
+  const lumbarY = 1.12 - squatDepth * 0.08;
+  const lumbarZ = 0.05 + squatDepth * 0.05;
 
   const { cloned } = useMemo(() => {
     const c = obj.clone(true);
@@ -107,12 +100,11 @@ function AnatomicalHumanoidMesh({
     c.scale.set(finalScale, finalScale, finalScale);
     c.position.set(0, 0, 0);
 
-    // Material setup based on skin mode
     let baseColor = 0xd89b8a;
-    let roughness = 0.7;
+    let roughness = 0.68;
     let metalness = 0.05;
     let emissive = 0x221310;
-    let emissiveIntensity = 0.05;
+    let emissiveIntensity = 0.06;
 
     if (skinMode === "cyber") {
       baseColor = 0x18181b;
@@ -122,7 +114,7 @@ function AnatomicalHumanoidMesh({
       emissiveIntensity = 0.2;
     } else if (skinMode === "realistic") {
       baseColor = 0xc68642;
-      roughness = 0.6;
+      roughness = 0.58;
       metalness = 0.02;
       emissive = 0x2a1506;
       emissiveIntensity = 0.08;
@@ -149,11 +141,10 @@ function AnatomicalHumanoidMesh({
   }, [obj, skinMode]);
 
   useFrame((state) => {
-    uniformsRef.current.uTime.value = state.clock.getElapsedTime();
     if (meshRef.current) {
-      // Subtle rhythmic breathing animation
-      const breath = Math.sin(state.clock.getElapsedTime() * 1.5) * 0.002;
-      meshRef.current.position.y = -squatDepth * 0.05 + breath;
+      // Subtle natural breathing motion
+      const breath = Math.sin(state.clock.getElapsedTime() * 1.5) * 0.0015;
+      meshRef.current.position.y = -squatDepth * 0.04 + breath;
     }
   });
 
@@ -161,91 +152,86 @@ function AnatomicalHumanoidMesh({
     <group ref={meshRef}>
       <primitive object={cloned} />
 
-      {/* Floating 3D Telemetry Pins Anchored in Real World Coordinates */}
-      <FloatingJointPin
+      {/* Sleek Non-Blocking 3D Beacons */}
+      <SleekJointBeacon
         position={[leftKneeX, kneeY, 0.08]}
-        title="Left Patellofemoral"
-        metric={`+${(squatDepth * 3.8).toFixed(1)} cm`}
+        label="L. Patella"
+        value={`+${(squatDepth * 3.8).toFixed(1)}cm`}
         status={squatDepth > 0.5 ? "critical" : "warning"}
-        detail="Medial knee collapse. Peak valgus torque across ACL ligament."
-        isOpen={selectedPin === "knee"}
-        onToggle={() => setSelectedPin(selectedPin === "knee" ? null : "knee")}
+        isSelected={selectedJoint === "knee"}
+        onClick={() => setSelectedJoint("knee")}
       />
 
-      <FloatingJointPin
+      <SleekJointBeacon
         position={[0, lumbarY, lumbarZ]}
-        title="L4-L5 Lumbar Spine"
-        metric={`${Math.round(280 + squatDepth * 240)} N`}
-        status={squatDepth > 0.6 ? "warning" : "optimal"}
-        detail="Trunk forward pitch generates vertebral compressive moment arm."
-        isOpen={selectedPin === "lumbar"}
-        onToggle={() => setSelectedPin(selectedPin === "lumbar" ? null : "lumbar")}
+        label="L4-L5"
+        value={`${Math.round(280 + squatDepth * 240)}N`}
+        status={squatDepth > 0.65 ? "warning" : "optimal"}
+        isSelected={selectedJoint === "lumbar"}
+        onClick={() => setSelectedJoint("lumbar")}
       />
 
-      <FloatingJointPin
-        position={[0.16, 0.62 - squatDepth * 0.05, 0.07]}
-        title="Vastus Medialis (VMO)"
-        metric={`${Math.round(45 + squatDepth * 35)}%`}
+      <SleekJointBeacon
+        position={[0.16, 0.62 - squatDepth * 0.04, 0.08]}
+        label="VMO"
+        value={`${Math.round(42 + squatDepth * 36)}%`}
         status="optimal"
-        detail="Hill muscle fiber activation. Quadriceps co-contraction ratio."
-        isOpen={selectedPin === "vmo"}
-        onToggle={() => setSelectedPin(selectedPin === "vmo" ? null : "vmo")}
+        isSelected={selectedJoint === "vmo"}
+        onClick={() => setSelectedJoint("vmo")}
       />
     </group>
   );
 }
 
-// ── Fallback 3D Holographic Loader ───────────────────────────────────────────
+// ── Fallback Spinner while OBJ Streams ──────────────────────────────────────
 function ModelLoaderFallback() {
   return (
     <Html center>
-      <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-black/90 border border-zinc-800 backdrop-blur-xl shadow-2xl text-center">
-        <div className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-3" />
-        <span className="text-xs font-mono font-bold tracking-wider text-white uppercase">
-          Streaming 3D Human Mesh
-        </span>
-        <span className="text-[10px] font-mono text-zinc-500 mt-0.5">
-          Loading High-Res Anatomical Rig (2.5 MB)
+      <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-black/80 border border-zinc-800 backdrop-blur-xl shadow-2xl text-center">
+        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-2" />
+        <span className="text-[11px] font-mono font-bold tracking-wider text-white uppercase">
+          Streaming 3D Human Rig
         </span>
       </div>
     </Html>
   );
 }
 
-// ── Main Hero Realistic Twin Component ───────────────────────────────────────
+// ── Main Hero Section Component (Spacious 2-Column Split Layout) ─────────────
 export function HeroRealisticTwin3D() {
   const [skinMode, setSkinMode] = useState<SkinMode>("ecorche");
   const [isAutoRotate, setIsAutoRotate] = useState(true);
   const [isPlayingMotion, setIsPlayingMotion] = useState(true);
-  const [squatDepth, setSquatDepth] = useState(0.65); // 0 (standing) to 1 (deep)
-  const [selectedPin, setSelectedPin] = useState<string | null>("knee");
+  const [squatDepth, setSquatDepth] = useState(0.65);
+  const [selectedJoint, setSelectedJoint] = useState<string>("knee");
 
-  // Dynamic Squat Motion Loop
+  // Dynamic Squat Motion Oscillation
   useEffect(() => {
     if (!isPlayingMotion) return;
     const interval = setInterval(() => {
-      const t = Date.now() / 1500;
-      const depth = (Math.sin(t) + 1) / 2; // Oscillate 0 to 1
+      const t = Date.now() / 1400;
+      const depth = (Math.sin(t) + 1) / 2; // Smooth 0 to 1 wave
       setSquatDepth(depth);
     }, 40);
     return () => clearInterval(interval);
   }, [isPlayingMotion]);
 
-  // Derived Biomechanical Telemetry
-  const kneeFlexionDeg = Math.round(165 - squatDepth * 85); // 165° standing down to 80° squat
+  // Derived Kinematic Telemetry
+  const kneeFlexionDeg = Math.round(165 - squatDepth * 85);
   const valgusDevCm = (squatDepth * 3.8).toFixed(1);
   const aclStrainPct = (3.5 + squatDepth * 5.2).toFixed(1);
   const lumbarShearN = Math.round(280 + squatDepth * 240);
-  const vmoPct = Math.round(40 + squatDepth * 38);
+  const vmoPct = Math.round(42 + squatDepth * 36);
   const vlPct = Math.round(45 + squatDepth * 44);
   const gluteMediusPct = Math.round(25 + (1 - squatDepth * 0.45) * 35);
+  const kamMomentNm = (24 + squatDepth * 24.2).toFixed(1);
 
   return (
-    <div className="relative w-full max-w-5xl mx-auto rounded-3xl p-1 bg-gradient-to-b from-red-500/30 via-zinc-800/40 to-zinc-950/90 shadow-2xl shadow-red-950/40">
-      <div className="rounded-[22px] bg-[#0c101d]/95 backdrop-blur-2xl border border-zinc-800 overflow-hidden flex flex-col">
+    <div className="w-full max-w-6xl mx-auto rounded-3xl p-1 bg-gradient-to-b from-red-500/25 via-zinc-800/40 to-zinc-950/90 shadow-2xl shadow-red-950/40">
+      <div className="rounded-[22px] bg-[#0c101d] border border-zinc-800 overflow-hidden">
         
-        {/* Top Control Bar */}
-        <div className="px-5 py-3.5 border-b border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 bg-[#09090b]/80">
+        {/* Top Header Bar */}
+        <div className="px-5 py-3 border-b border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 bg-[#09090b]/90">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -254,45 +240,42 @@ export function HeroRealisticTwin3D() {
             <span className="text-xs font-mono font-bold tracking-wider text-white uppercase">
               3D Musculoskeletal Digital Twin
             </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 font-bold">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-bold">
               120 Hz Sub-Frame
             </span>
           </div>
 
           {/* Quick Toolbar */}
           <div className="flex items-center gap-2 text-xs font-mono">
-            {/* Skin Material Switcher */}
+            {/* Skin Selector */}
             <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
               <button
                 onClick={() => setSkinMode("ecorche")}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   skinMode === "ecorche" ? "bg-red-600 text-white shadow" : "text-zinc-400 hover:text-white"
                 }`}
-                title="Écorché Muscular Anatomy"
               >
                 Muscle
               </button>
               <button
                 onClick={() => setSkinMode("cyber")}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   skinMode === "cyber" ? "bg-cyan-600 text-white shadow" : "text-zinc-400 hover:text-white"
                 }`}
-                title="Cyber Biomechanics Scan"
               >
                 Cyber
               </button>
               <button
                 onClick={() => setSkinMode("realistic")}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   skinMode === "realistic" ? "bg-amber-600 text-white shadow" : "text-zinc-400 hover:text-white"
                 }`}
-                title="PBR Realistic Skin"
               >
                 Skin
               </button>
             </div>
 
-            {/* Orbit Auto-Rotate Toggle */}
+            {/* Orbit Turntable Toggle */}
             <button
               onClick={() => setIsAutoRotate(!isAutoRotate)}
               className={`px-2.5 py-1 rounded-lg border text-[11px] flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -305,7 +288,7 @@ export function HeroRealisticTwin3D() {
               <span className="hidden sm:inline">360° Orbit</span>
             </button>
 
-            {/* Play/Pause Motion */}
+            {/* Simulate Motion Toggle */}
             <button
               onClick={() => setIsPlayingMotion(!isPlayingMotion)}
               className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white text-[11px] flex items-center gap-1 cursor-pointer"
@@ -316,187 +299,233 @@ export function HeroRealisticTwin3D() {
           </div>
         </div>
 
-        {/* Center Stage: Interactive 3D WebGL Canvas with HUD Overlays */}
-        <div className="relative w-full h-[460px] md:h-[520px] bg-gradient-to-b from-[#09090b] via-[#0c101d] to-[#080b14] overflow-hidden">
+        {/* Spacious 2-Column Split Stage (No Overlapping Boxes!) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[520px]">
           
-          {/* Top Left Floating Telemetry Badge */}
-          <div className="absolute top-4 left-4 z-10 space-y-2 pointer-events-none">
-            <div className="p-3 rounded-xl bg-black/70 border border-zinc-800/80 backdrop-blur-md shadow-xl text-left pointer-events-auto">
-              <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400 uppercase tracking-wider mb-1">
-                <AlertTriangle className="w-3 h-3 text-red-400" />
-                <span>Patellar Tracking</span>
-              </div>
-              <div className="text-xl font-mono font-black text-red-400">
-                +{valgusDevCm} cm <span className="text-xs font-normal text-zinc-400">Valgus</span>
-              </div>
-              <div className="text-[10px] font-mono text-zinc-400 mt-1">
-                Knee Flexion: <span className="text-white font-bold">{kneeFlexionDeg}°</span>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-black/70 border border-zinc-800/80 backdrop-blur-md shadow-xl text-left pointer-events-auto">
-              <div className="text-[10px] font-mono text-zinc-400 uppercase">ACL Strain Vector</div>
-              <div className="text-sm font-mono font-bold text-amber-400 flex items-center gap-1.5">
-                <span>{aclStrainPct}%</span>
-                <span className="text-[10px] font-normal px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Elevated
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Top Right Floating Telemetry Badge */}
-          <div className="absolute top-4 right-4 z-10 space-y-2 text-right pointer-events-none">
-            <div className="p-3 rounded-xl bg-black/70 border border-zinc-800/80 backdrop-blur-md shadow-xl pointer-events-auto">
-              <div className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider mb-1">
-                L4-L5 Lumbar Shear
-              </div>
-              <div className="text-xl font-mono font-black text-amber-400">
-                {lumbarShearN} <span className="text-xs font-normal text-zinc-400">N</span>
-              </div>
-              <div className="text-[10px] font-mono text-zinc-400 mt-1">
-                Vertebral Safety Threshold: 500 N
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-black/70 border border-zinc-800/80 backdrop-blur-md shadow-xl pointer-events-auto text-left">
-              <div className="text-[10px] font-mono text-zinc-400 uppercase">3D Interaction</div>
-              <div className="text-[11px] font-mono text-zinc-300 flex items-center gap-1 mt-0.5">
-                <span className="text-emerald-400 font-bold">Drag</span> to orbit 360°
-              </div>
-            </div>
-          </div>
-
-          {/* Three.js 3D WebGL Canvas */}
-          <Canvas
-            shadows
-            camera={{ position: [0, 0.45, 2.7], fov: 38 }}
-            gl={{
-              antialias: true,
-              powerPreference: "high-performance",
-              toneMapping: THREE.ACESFilmicToneMapping,
-              toneMappingExposure: 1.25,
-            }}
-          >
-            {/* Dramatic Studio Rim Lighting for Anatomical Depth */}
-            <ambientLight intensity={0.8} color="#ffffff" />
-            <directionalLight position={[2.5, 3.5, 3]} intensity={3.2} color="#ffffff" castShadow />
-            <directionalLight position={[-3, 2, -2]} intensity={2.6} color="#ef4444" /> {/* Crimson Backlight */}
-            <directionalLight position={[3, 1.5, -2]} intensity={2.2} color="#06b6d4" /> {/* Cyan Backlight */}
-            <pointLight position={[0, -0.2, 1.5]} intensity={1.2} color="#f59e0b" />
-
-            {/* Circular Grid Studio Floor */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.92, 0]} receiveShadow>
-              <planeGeometry args={[10, 10]} />
-              <shadowMaterial opacity={0.3} />
-            </mesh>
-
-            <Suspense fallback={<ModelLoaderFallback />}>
-              <AnatomicalHumanoidMesh
-                skinMode={skinMode}
-                squatDepth={squatDepth}
-                selectedPin={selectedPin}
-                setSelectedPin={setSelectedPin}
-              />
-            </Suspense>
-
-            {/* 360° Free Drag Orbit Controls */}
-            <OrbitControls
-              target={[0, 0.38, 0]}
-              enableZoom={false}
-              enablePan={false}
-              autoRotate={isAutoRotate}
-              autoRotateSpeed={1.0}
-              minPolarAngle={Math.PI / 4}
-              maxPolarAngle={Math.PI / 1.7}
-              dampingFactor={0.05}
-              enableDamping
-            />
-          </Canvas>
-
-          {/* Bottom Hint */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-            <div className="px-3 py-1 rounded-full bg-black/60 border border-zinc-800 text-[10px] font-mono text-zinc-400 backdrop-blur-md">
-              ● Click & drag anywhere on the 3D model to inspect joint kinetics from any angle
-            </div>
-          </div>
-
-        </div>
-
-        {/* Bottom Interactive Virtual sEMG & Form Scrubbing Deck */}
-        <div className="p-4 md:p-5 border-t border-zinc-800/80 bg-[#09090b]/90 space-y-4">
-          
-          {/* Depth / Form Interactive Scrub Bar */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/70">
-            <div className="flex items-center gap-2 min-w-[150px]">
-              <Sliders className="w-4 h-4 text-red-400" />
-              <span className="text-xs font-mono font-bold text-white uppercase">Form Depth</span>
-              <span className="text-xs font-mono font-bold text-red-400">
-                {Math.round(squatDepth * 100)}%
+          {/* Column 1: Unobstructed, Centered 3D Viewport (Full Head-To-Toe Body Visible) */}
+          <div className="relative lg:col-span-7 h-[460px] sm:h-[520px] lg:h-[600px] bg-gradient-to-b from-[#09090b] via-[#0c101d] to-[#070912] border-b lg:border-b-0 lg:border-r border-zinc-800/80 overflow-hidden">
+            
+            {/* Minimal Corner Status */}
+            <div className="absolute top-3 left-3 z-10 pointer-events-none">
+              <span className="text-[10px] font-mono px-2 py-1 rounded bg-black/60 border border-zinc-800/80 text-zinc-400 backdrop-blur-md">
+                Left-Click + Drag to Rotate 360°
               </span>
             </div>
 
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={squatDepth}
-              onChange={(e) => {
-                setIsPlayingMotion(false);
-                setSquatDepth(parseFloat(e.target.value));
+            <Canvas
+              shadows
+              camera={{ position: [0, 0.90, 3.4], fov: 38 }}
+              gl={{
+                antialias: true,
+                powerPreference: "high-performance",
+                toneMapping: THREE.ACESFilmicToneMapping,
+                toneMappingExposure: 1.25,
               }}
-              className="w-full accent-red-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
-            />
+            >
+              {/* Studio Rim Lighting */}
+              <ambientLight intensity={0.9} color="#ffffff" />
+              <directionalLight position={[2.5, 3.5, 3]} intensity={3.0} color="#ffffff" castShadow />
+              <directionalLight position={[-3, 2, -2]} intensity={2.5} color="#ef4444" />
+              <directionalLight position={[3, 1.5, -2]} intensity={2.2} color="#06b6d4" />
+              <pointLight position={[0, 0.4, 1.8]} intensity={1.2} color="#f59e0b" />
 
-            <span className="text-[11px] font-mono text-zinc-400 whitespace-nowrap">
-              {squatDepth < 0.3 ? "Standing Prep" : squatDepth < 0.7 ? "Deceleration" : "Peak Depth"}
-            </span>
+              {/* Floor Studio Grid (Positioned cleanly under the feet) */}
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
+                <planeGeometry args={[8, 8]} />
+                <shadowMaterial opacity={0.3} />
+              </mesh>
+
+              <Suspense fallback={<ModelLoaderFallback />}>
+                <FullHumanoidRig
+                  skinMode={skinMode}
+                  squatDepth={squatDepth}
+                  selectedJoint={selectedJoint}
+                  setSelectedJoint={setSelectedJoint}
+                />
+              </Suspense>
+
+              {/* Orbit Controls target centered at torso/midpoint [0, 0.88, 0] */}
+              <OrbitControls
+                target={[0, 0.88, 0]}
+                enableZoom={false}
+                enablePan={false}
+                autoRotate={isAutoRotate}
+                autoRotateSpeed={1.0}
+                minPolarAngle={Math.PI / 4}
+                maxPolarAngle={Math.PI / 1.7}
+                dampingFactor={0.05}
+                enableDamping
+              />
+            </Canvas>
+
+            {/* Bottom Sub-label */}
+            <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between text-[10px] font-mono text-zinc-500 pointer-events-none">
+              <span>Model: High-Resolution Anatomical Rig</span>
+              <span>10 MTU Virtual Channels Active</span>
+            </div>
           </div>
 
-          {/* 3 Virtual sEMG Muscle Channels */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Column 2: Dedicated Biomechanical Telemetry Rail (Completely Off-Canvas, 0 Overlap) */}
+          <div className="lg:col-span-5 p-5 md:p-6 flex flex-col justify-between space-y-4 bg-[#09090b]/80">
             
-            <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/70 space-y-1.5">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-zinc-400">VMO (Inner Quad)</span>
-                <span className="font-bold text-emerald-400">{vmoPct}%</span>
-              </div>
-              <div className="w-full bg-zinc-800/80 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-100"
-                  style={{ width: `${vmoPct}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/70 space-y-1.5">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-zinc-400">VL (Outer Quad)</span>
-                <span className="font-bold text-red-400">{vlPct}%</span>
-              </div>
-              <div className="w-full bg-zinc-800/80 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-red-500 h-full rounded-full transition-all duration-100"
-                  style={{ width: `${vlPct}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/70 space-y-1.5">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-zinc-400">Gluteus Medius</span>
-                <span className={`font-bold ${gluteMediusPct < 30 ? "text-red-400" : "text-amber-400"}`}>
-                  {gluteMediusPct}% {gluteMediusPct < 30 ? "(Inhibited)" : ""}
+            {/* Block 1: Valgus Anomaly & Knee Tracking */}
+            <div className={`p-4 rounded-2xl border transition-all ${
+              selectedJoint === "knee"
+                ? "bg-red-950/20 border-red-500/40 shadow-lg shadow-red-950/30"
+                : "bg-zinc-900/60 border-zinc-800/80"
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                    Patellar Tracking & Valgus
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 font-bold">
+                  {squatDepth > 0.5 ? "Critical Drift" : "Watch"}
                 </span>
               </div>
-              <div className="w-full bg-zinc-800/80 rounded-full h-2 overflow-hidden">
+
+              <div className="grid grid-cols-3 gap-2 py-1">
+                <div>
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Valgus Dev</div>
+                  <div className="text-lg font-mono font-black text-red-400">+{valgusDevCm} cm</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Knee Flexion</div>
+                  <div className="text-lg font-mono font-black text-white">{kneeFlexionDeg}°</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">KAM Moment</div>
+                  <div className="text-lg font-mono font-black text-amber-400">{kamMomentNm} Nm</div>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+                Medial knee displacement exceeding the second toe ray triggers dynamic ACL shear warning.
+              </p>
+            </div>
+
+            {/* Block 2: Spinal Load & Ligament Stress */}
+            <div className={`p-4 rounded-2xl border transition-all ${
+              selectedJoint === "lumbar"
+                ? "bg-amber-950/20 border-amber-500/40 shadow-lg shadow-amber-950/30"
+                : "bg-zinc-900/60 border-zinc-800/80"
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                    Spine & Ligament Load
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  ACL: <span className="text-amber-400 font-bold">{aclStrainPct}%</span>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between py-1">
+                <div>
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">L4-L5 Lumbar Shear</div>
+                  <div className="text-xl font-mono font-black text-amber-400">{lumbarShearN} N</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Safety Threshold</div>
+                  <div className="text-xs font-mono text-zinc-300 font-bold">Max 500 N</div>
+                </div>
+              </div>
+
+              {/* Progress Bar for Shear Force */}
+              <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden mt-1">
                 <div
                   className={`h-full rounded-full transition-all duration-100 ${
-                    gluteMediusPct < 30 ? "bg-red-500" : "bg-amber-500"
+                    lumbarShearN > 450 ? "bg-red-500" : "bg-amber-500"
                   }`}
-                  style={{ width: `${gluteMediusPct}%` }}
+                  style={{ width: `${Math.min(100, (lumbarShearN / 550) * 100)}%` }}
                 />
+              </div>
+            </div>
+
+            {/* Block 3: Virtual sEMG Muscle Activation */}
+            <div className={`p-4 rounded-2xl border transition-all ${
+              selectedJoint === "vmo"
+                ? "bg-emerald-950/20 border-emerald-500/40"
+                : "bg-zinc-900/60 border-zinc-800/80"
+            } space-y-2.5`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                  Virtual sEMG Activation
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 font-bold">Hill MTU</span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-zinc-400">VMO (Inner Quad)</span>
+                    <span className="text-emerald-400 font-bold">{vmoPct}%</span>
+                  </div>
+                  <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-emerald-500 h-full rounded-full transition-all duration-100" style={{ width: `${vmoPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-zinc-400">VL (Outer Quad)</span>
+                    <span className="text-red-400 font-bold">{vlPct}%</span>
+                  </div>
+                  <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-red-500 h-full rounded-full transition-all duration-100" style={{ width: `${vlPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-zinc-400">Gluteus Medius</span>
+                    <span className={`font-bold ${gluteMediusPct < 30 ? "text-red-400" : "text-amber-400"}`}>
+                      {gluteMediusPct}% {gluteMediusPct < 30 ? "(Inhibited)" : ""}
+                    </span>
+                  </div>
+                  <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-100 ${
+                        gluteMediusPct < 30 ? "bg-red-500" : "bg-amber-500"
+                      }`}
+                      style={{ width: `${gluteMediusPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Block 4: Interactive Depth Scrubber */}
+            <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800/80 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-red-400" />
+                  <span>Manual Form Scrubber</span>
+                </span>
+                <span className="text-red-400 font-black">{Math.round(squatDepth * 100)}%</span>
+              </div>
+
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={squatDepth}
+                onChange={(e) => {
+                  setIsPlayingMotion(false);
+                  setSquatDepth(parseFloat(e.target.value));
+                }}
+                className="w-full accent-red-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+              />
+
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>Standing (165°)</span>
+                <span>Parallel (90°)</span>
+                <span>Deep Squat (80°)</span>
               </div>
             </div>
 
