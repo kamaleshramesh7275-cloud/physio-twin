@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Camera, History, Clock, Brain, Settings, 
   User, BarChart2, ClipboardList, LineChart, Users, Building,
-  Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell
+  Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell, Share2, Stethoscope
 } from "lucide-react";
 
 function NavItem({ icon, label, href, active }: { icon: React.ReactNode; label: string; href: string; active?: boolean }) {
@@ -62,6 +62,8 @@ export function Sidebar() {
         
         <NavSection title="Clinical & Community" />
         <NavItem icon={<ClipboardList className="w-5 h-5 md:w-5 md:h-5" />} label="Programs" href="/programs" active={location === '/programs'} />
+        <NavItem icon={<Users className="w-5 h-5 md:w-5 md:h-5 text-purple-500" />} label="Coach Portal" href="/coach" active={location === '/coach'} />
+        <NavItem icon={<Share2 className="w-5 h-5 md:w-5 md:h-5 text-emerald-500" />} label="Public Review" href="/review" active={location === '/review'} />
         <NavItem icon={<Building className="w-5 h-5 md:w-5 md:h-5" />} label="Clinic" href="/clinic" active={location === '/clinic'} />
         <NavItem icon={<BarChart2 className="w-5 h-5 md:w-5 md:h-5" />} label="Benchmark" href="/leaderboard" active={location === '/leaderboard'} />
         <NavItem icon={<Users className="w-5 h-5 md:w-5 md:h-5" />} label="Community" href="/community" active={location === '/community'} />

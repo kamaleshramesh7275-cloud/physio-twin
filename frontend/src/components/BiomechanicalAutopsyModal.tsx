@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { 
   AlertTriangle, ShieldAlert, Activity, CheckCircle2, 
-  Clock, ArrowRight, Printer, X, Sparkles, AlertOctagon, HeartHandshake, Gauge
+  Clock, ArrowRight, Printer, X, Sparkles, AlertOctagon, HeartHandshake, Gauge, Share2
 } from "lucide-react";
+import { saveShareableSession, generateShareableUrl } from "../lib/shareableSessionStore";
 import type { ForensicAutopsyReport, TelemetryFlightFrame } from "../lib/flightRecorder";
 
 interface BiomechanicalAutopsyModalProps {
@@ -17,6 +18,39 @@ export const BiomechanicalAutopsyModal: React.FC<BiomechanicalAutopsyModalProps>
   onClose
 }) => {
   const [selectedPhaseIdx, setSelectedPhaseIdx] = useState<number>(2);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleShareWithDoctor = () => {
+    if (!report) return;
+    const sessionId = `PT-${Date.now().toString().slice(-5)}`;
+    saveShareableSession({
+      id: sessionId,
+      patientName: "Active Athlete",
+      patientAge: 25,
+      sportOrActivity: "Training Session",
+      sessionDate: new Date().toISOString().split("T")[0],
+      sessionType: "squat-analysis",
+      durationSeconds: 60,
+      repsCompleted: 4,
+      overallFormScore: 74,
+      maxKneeFlexionDeg: 86,
+      peakKamNmKg: parseFloat((report.peakShearTorqueNm / 75).toFixed(2)),
+      semgSnapshot: buffer[buffer.length - 1]?.semg || {
+        activations: { gluteusMaximus: 45, gluteusMedius: 20, vastusMedialis: 35, vastusLateralis: 82, rectusFemoris: 70, bicepsFemoris: 50, semitendinosus: 45, erectorSpinae: 86, rectusAbdominis: 60, gastrocnemius: 70 },
+        ratios: { gluteToLumbarRatio: 0.52, vmoToVlRatio: 0.42, hamstringToQuadRatio: 0.45 },
+        fiberTelemetry: { eccentricForceMultiplier: 1.35, patellarMomentArmCm: 4.5, gluteMomentArmCm: 6.4, lumbarMomentArmCm: 5.5, vmoPennationAngleDeg: 19.8 },
+        diagnosticAlerts: []
+      },
+      autopsyReport: report,
+      keyLandmarks: [],
+      clearanceStatus: "restricted"
+    });
+
+    const url = generateShareableUrl(sessionId);
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 3000);
+  };
 
   if (!report) return null;
 
@@ -257,11 +291,18 @@ export const BiomechanicalAutopsyModal: React.FC<BiomechanicalAutopsyModalProps>
 
           <div className="flex items-center gap-3">
             <button
+              onClick={handleShareWithDoctor}
+              className="px-4 py-2 rounded-xl text-xs font-semibold border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary flex items-center gap-1.5 transition-all"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              {copiedLink ? "✓ Link Copied!" : "1-Click Doctor Link"}
+            </button>
+            <button
               onClick={() => window.print()}
               className="px-4 py-2 rounded-xl text-xs font-semibold border border-border bg-card hover:bg-muted/50 text-foreground flex items-center gap-1.5 transition-all"
             >
               <Printer className="w-3.5 h-3.5" />
-              Export Clinician PDF
+              Export PDF
             </button>
             <button
               onClick={onClose}

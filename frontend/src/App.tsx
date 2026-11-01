@@ -115,6 +115,8 @@ import VitalsPage from "./VitalsPage";
 import MentalReadinessPage from "./MentalReadinessPage";
 import WikiPage from "./WikiPage";
 import AchievementsPage from "./AchievementsPage";
+import PublicReviewPage from "./PublicReviewPage";
+import CoachPortalPage from "./CoachPortalPage";
 import LoginPage from "./LoginPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
@@ -154,6 +156,9 @@ function AppContent() {
         <Route path="/capture" component={CaptureEngine} />
         <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
         <Route path="/demo" component={DemoDashboard} />
+        <Route path="/review" component={PublicReviewPage} />
+        <Route path="/review/:id" component={PublicReviewPage} />
+        <Route path="/coach" component={CoachPortalPage} />
         
         {/* Protected Routes */}
         <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>

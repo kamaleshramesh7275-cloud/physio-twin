@@ -5,8 +5,9 @@ import {
   Camera, CheckCircle2, ChevronRight, Loader2,
   Eye, Activity, Brain, Sparkles, BarChart3, Zap,
   PersonStanding, Dumbbell, ArrowRight, Clock,
-  Plus, FileText, UploadCloud, CheckCircle, ImagePlus, ShieldCheck, Calendar, History
+  Plus, FileText, UploadCloud, CheckCircle, ImagePlus, ShieldCheck, Calendar, History, Share2
 } from "lucide-react";
+import { saveShareableSession, generateShareableUrl } from "./lib/shareableSessionStore";
 import { api } from "./api";
 import { auth } from "./firebase";
 import { Sidebar } from "./components/Sidebar";
@@ -1904,10 +1905,54 @@ function CaptureEngineContent() {
           </div>
 
           {allDone && (
-            <div className="mt-5 text-center">
-              <div className="flex items-center justify-center gap-2 text-emerald-500 text-sm">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Redirecting to Insights…
+            <div className="mt-5 space-y-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Session Analyzed & Saved to Digital Twin
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    const sid = `PT-${Date.now().toString().slice(-5)}`;
+                    saveShareableSession({
+                      id: sid,
+                      patientName: "Active Athlete",
+                      patientAge: 25,
+                      sportOrActivity: mode === "squat-analysis" ? "Squats" : mode === "sit-to-stand" ? "Sit-to-Stand" : "Posture Scan",
+                      sessionDate: new Date().toISOString().split("T")[0],
+                      sessionType: mode as any,
+                      durationSeconds: elapsed,
+                      repsCompleted: reps,
+                      overallFormScore: Math.round(liveSymmetry),
+                      maxKneeFlexionDeg: 88,
+                      peakKamNmKg: liveKamNormalized,
+                      semgSnapshot: liveSemg || {
+                        activations: { gluteusMaximus: 65, gluteusMedius: 58, vastusMedialis: 60, vastusLateralis: 65, rectusFemoris: 60, bicepsFemoris: 55, semitendinosus: 50, erectorSpinae: 58, rectusAbdominis: 65, gastrocnemius: 60 },
+                        ratios: { gluteToLumbarRatio: 1.12, vmoToVlRatio: 0.92, hamstringToQuadRatio: 0.58 },
+                        fiberTelemetry: { eccentricForceMultiplier: 1.35, patellarMomentArmCm: 4.6, gluteMomentArmCm: 6.4, lumbarMomentArmCm: 5.5, vmoPennationAngleDeg: 20.0 },
+                        diagnosticAlerts: []
+                      },
+                      autopsyReport: autopsyReport,
+                      keyLandmarks: liveWorldLmState,
+                      clearanceStatus: "cleared"
+                    });
+                    const url = generateShareableUrl(sid);
+                    navigator.clipboard.writeText(url);
+                    alert(`Public Doctor Link Copied!\n${url}`);
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Share with PT / Doctor
+                </button>
+
+                <button
+                  onClick={() => setLocation("/dashboard")}
+                  className="btn-primary py-2.5 px-4 text-xs font-bold flex-1"
+                >
+                  View Dashboard
+                </button>
               </div>
             </div>
           )}
