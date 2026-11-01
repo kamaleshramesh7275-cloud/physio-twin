@@ -4,11 +4,13 @@ import {
   Activity, Camera, History, Brain,
   AlertTriangle, TrendingUp, TrendingDown,
   ChevronRight, BarChart2, Target, ShieldAlert, CheckCircle2,
-  Sparkles, Box
+  Sparkles, Box, Play, Pause, RotateCcw, Sliders, Eye, Compass, Layers, Maximize2
 } from "lucide-react";
 import HoloModel3D from "./HoloModel3D";
 import { Sidebar } from "./components/Sidebar";
 import type { ZoneId, ZoneRisk } from "./HoloModel3D";
+import { MOVEMENT_LIBRARY, type ExerciseType, type MovementFrame } from "./lib/movementLibrary";
+import { JointMicroInspectionPanel, type InspectionStation } from "./components/JointMicroInspectionPanel";
 import { useAuth } from "./context/AuthContext";
 import { useAvatar } from "./AvatarContext";
 import { fetchGoogleHealthData } from "./lib/googleHealthApi";
@@ -139,6 +141,29 @@ export default function TwinPage() {
   const [isDeletingHistory, setIsDeletingHistory] = useState(false);
   const [scanFilter, setScanFilter] = useState<"biceps-curls" | "squats" | "all">("all");
   const [deepMetrics, setDeepMetrics] = useState<Record<string, string>>({});
+
+  // ── Enhanced 3D Digital Twin Motion, Layer & Camera States ──
+  const [layerStep, setLayerStep] = useState<number>(0); // 0 = Skin, 1 = Muscle, 2 = Bone, 3 = Force
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseType>("squat");
+  const [isPlayingMotion, setIsPlayingMotion] = useState<boolean>(true);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [frameIdx, setFrameIdx] = useState<number>(0);
+  const [showGhost, setShowGhost] = useState<boolean>(true);
+  const [cameraFocusStation, setCameraFocusStation] = useState<InspectionStation>("none");
+  const [cameraPreset, setCameraPreset] = useState<"front" | "side" | "top" | "orbit">("front");
+
+  const currentExerciseDef = MOVEMENT_LIBRARY[selectedExercise];
+  const currentExerciseFrame = currentExerciseDef.frames[frameIdx] || currentExerciseDef.frames[0];
+
+  // Dynamic Movement Playback Loop
+  useEffect(() => {
+    if (!isPlayingMotion) return;
+    const intervalMs = Math.round(40 / playbackSpeed);
+    const timer = setInterval(() => {
+      setFrameIdx(prev => (prev + 1) % currentExerciseDef.frameCount);
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [isPlayingMotion, playbackSpeed, currentExerciseDef]);
 
   useEffect(() => {
     const uid = user?.uid || auth.currentUser?.uid || "demo_user";
@@ -457,6 +482,9 @@ export default function TwinPage() {
         selectedZone={selectedZone}
         onZoneClick={(id) => {
           setSelectedZone(prev => prev === id ? null : id);
+          if (id.includes("knee")) setCameraFocusStation("knee");
+          else if (id.includes("lumbar")) setCameraFocusStation("lumbar");
+          else if (id.includes("shoulder")) setCameraFocusStation("shoulder");
           setMobileDrawerOpen(true);
         }}
         onLogPainClick={(id) => setSelfReportModalZone(id)}
@@ -465,7 +493,27 @@ export default function TwinPage() {
         regionalInsights={regionalInsights}
         scanFilter={scanFilter}
         sessionMetrics={deepMetrics}
+        layerStep={layerStep}
+        currentFrame={mode === "active" ? currentExerciseFrame : null}
+        showGhost={showGhost}
+        cameraFocusStation={cameraFocusStation}
+        cameraPreset={cameraPreset}
       />
+
+      {/* ── Cinematic Joint Micro-Inspection Panel ── */}
+      {cameraFocusStation !== "none" && (
+        <JointMicroInspectionPanel
+          station={cameraFocusStation}
+          onClose={() => setCameraFocusStation("none")}
+          kneeAngle={currentExerciseFrame.angles.kneeFlexion}
+          valgusDevCm={currentExerciseFrame.angles.valgusDevCm}
+          aclStrainPct={currentExerciseFrame.forces.aclStrainPct}
+          lumbarShearN={currentExerciseFrame.forces.lumbarShearN}
+          trunkInclination={currentExerciseFrame.angles.trunkInclination}
+          vmoActivation={currentExerciseFrame.muscles.vmo}
+          vlActivation={currentExerciseFrame.muscles.vl}
+        />
+      )}
       
       {/* ── Clinical Pain-Map Legend ── */}
       <div className="absolute bottom-20 md:bottom-6 left-3 md:left-[272px] pointer-events-auto z-20 bg-[#121215]/95 backdrop-blur-md border border-[#27272a] p-3.5 rounded-2xl flex flex-col gap-2.5 shadow-2xl w-60">
@@ -612,6 +660,47 @@ export default function TwinPage() {
                   🔄 All Limbs
                 </button>
               </div>
+
+              {/* 4-Tier Anatomical Layer Cutaway Slider / Tabs */}
+              <div className="bg-[#121215]/90 backdrop-blur-md border border-[#27272a] p-1 rounded-2xl flex items-center gap-1 shadow-md flex-wrap">
+                <span className="text-[10px] font-mono text-zinc-500 px-1 uppercase font-bold hidden xl:inline">Layer:</span>
+                <button
+                  onClick={() => setLayerStep(0)}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
+                    layerStep === 0 ? "bg-red-950/50 text-red-300 border border-red-500/40" : "text-zinc-400 hover:text-white"
+                  }`}
+                  title="Outer PBR Skin & Compression Suit"
+                >
+                  Skin
+                </button>
+                <button
+                  onClick={() => setLayerStep(1)}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
+                    layerStep === 1 ? "bg-amber-950/50 text-amber-300 border border-amber-500/40" : "text-zinc-400 hover:text-white"
+                  }`}
+                  title="Myofascial Muscles & Hill sEMG"
+                >
+                  Muscles (sEMG)
+                </button>
+                <button
+                  onClick={() => setLayerStep(2)}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
+                    layerStep === 2 ? "bg-blue-950/50 text-blue-300 border border-blue-500/40" : "text-zinc-400 hover:text-white"
+                  }`}
+                  title="3D Skeletal Articular Bones"
+                >
+                  Bones
+                </button>
+                <button
+                  onClick={() => setLayerStep(3)}
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
+                    layerStep === 3 ? "bg-purple-950/50 text-purple-300 border border-purple-500/40" : "text-zinc-400 hover:text-white"
+                  }`}
+                  title="Ligament Tension & Ground Reaction Force"
+                >
+                  Forces & ACL
+                </button>
+              </div>
             </div>
 
             {/* Twin Score & Notification */}
@@ -645,6 +734,172 @@ export default function TwinPage() {
           </div>
 
           <div className="flex-1 min-h-0" />
+
+          {/* Bottom Movement Simulation Player Deck & Camera Presets for ACTIVE mode */}
+          {mode === "active" && (
+            <div className="pointer-events-auto m-2 sm:m-4 p-3 sm:p-4 bg-[#0c101d]/95 backdrop-blur-2xl border border-zinc-800 rounded-2xl shadow-2xl space-y-3 z-30">
+              
+              {/* Row 1: Exercise Selector & Micro-Inspection Zoom Triggers */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-2.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold mr-1">Movement:</span>
+                  {(["squat", "hop", "deadlift", "press"] as ExerciseType[]).map((ex) => (
+                    <button
+                      key={ex}
+                      onClick={() => {
+                        setSelectedExercise(ex);
+                        setFrameIdx(0);
+                      }}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                        selectedExercise === ex
+                          ? "bg-red-600 text-white shadow-md shadow-red-950/40"
+                          : "bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      {ex === "squat" && "🏋️ Squat (Valgus)"}
+                      {ex === "hop" && "🏃 Hop & Land (ACL)"}
+                      {ex === "deadlift" && "⚡ Deadlift (L4-L5)"}
+                      {ex === "press" && "💪 Shoulder Press"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Micro-Inspection Quick Jump Buttons */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold mr-1 hidden sm:inline">Inspect:</span>
+                  <button
+                    onClick={() => setCameraFocusStation(cameraFocusStation === "knee" ? "none" : "knee")}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                      cameraFocusStation === "knee"
+                        ? "bg-red-950 border-red-500 text-red-300"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Knee
+                  </button>
+                  <button
+                    onClick={() => setCameraFocusStation(cameraFocusStation === "lumbar" ? "none" : "lumbar")}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                      cameraFocusStation === "lumbar"
+                        ? "bg-amber-950 border-amber-500 text-amber-300"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    L4-L5 Spine
+                  </button>
+                  <button
+                    onClick={() => setCameraFocusStation(cameraFocusStation === "shoulder" ? "none" : "shoulder")}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                      cameraFocusStation === "shoulder"
+                        ? "bg-blue-950 border-blue-500 text-blue-300"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Shoulder
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: Playback Bar with Frame Scrubber & Phase Readout */}
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                
+                {/* Play/Pause & Speed */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setIsPlayingMotion(!isPlayingMotion)}
+                    className="p-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all shadow-md cursor-pointer"
+                    title={isPlayingMotion ? "Pause Playback" : "Play Simulation"}
+                  >
+                    {isPlayingMotion ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white" />}
+                  </button>
+
+                  <div className="flex bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 text-[10px] font-mono">
+                    {[0.25, 0.5, 1.0].map((spd) => (
+                      <button
+                        key={spd}
+                        onClick={() => setPlaybackSpeed(spd)}
+                        className={`px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                          playbackSpeed === spd ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+                        }`}
+                      >
+                        {spd}x
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Ghost Form Benchmark Toggle */}
+                  <button
+                    onClick={() => setShowGhost(!showGhost)}
+                    className={`px-2 py-1 rounded-lg border text-[10px] font-mono flex items-center gap-1 transition-all cursor-pointer ${
+                      showGhost
+                        ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300 font-bold"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    title="Toggle Ideal Gold-Standard Ghost Wireframe"
+                  >
+                    <Eye className="w-3 h-3 text-emerald-400" />
+                    <span>Ghost Form</span>
+                  </button>
+                </div>
+
+                {/* Scrubber Bar */}
+                <div className="flex-1 w-full flex items-center gap-2 min-w-0">
+                  <input
+                    type="range"
+                    min="0"
+                    max={currentExerciseDef.frameCount - 1}
+                    value={frameIdx}
+                    onChange={(e) => {
+                      setIsPlayingMotion(false);
+                      setFrameIdx(Number(e.target.value));
+                    }}
+                    className="w-full accent-red-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+                  />
+                  <span className="text-[10px] font-mono text-zinc-400 shrink-0 w-12 text-right">
+                    {currentExerciseFrame.timestampSec.toFixed(2)}s
+                  </span>
+                </div>
+
+                {/* Phase Badge */}
+                <span className="px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[10px] font-mono font-bold text-red-300 whitespace-nowrap shrink-0">
+                  {currentExerciseFrame.phaseLabel}
+                </span>
+              </div>
+
+              {/* Row 3: 1-Click Camera Presets Toolbar */}
+              <div className="flex items-center justify-between pt-1 border-t border-zinc-800/60 text-[10px] font-mono text-zinc-400 flex-wrap gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-zinc-500 uppercase font-bold">Camera View:</span>
+                  {(["front", "side", "top", "orbit"] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        setCameraPreset(p);
+                        setCameraFocusStation("none");
+                      }}
+                      className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                        cameraPreset === p && cameraFocusStation === "none"
+                          ? "bg-zinc-800 text-white font-bold"
+                          : "hover:text-zinc-200"
+                      }`}
+                    >
+                      {p === "front" && "Front (AP)"}
+                      {p === "side" && "Side (Sagittal)"}
+                      {p === "top" && "Top (Transverse)"}
+                      {p === "orbit" && "Free 360°"}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-4 text-zinc-400">
+                  <span>Knee Flexion: <strong className="text-white">{currentExerciseFrame.angles.kneeFlexion}°</strong></span>
+                  <span>ACL Strain: <strong className="text-amber-400">{currentExerciseFrame.forces.aclStrainPct}%</strong></span>
+                  <span>Valgus: <strong className="text-red-400">+{currentExerciseFrame.angles.valgusDevCm} cm</strong></span>
+                </div>
+              </div>
+
+            </div>
+          )}
 
           {/* Bottom scrubbers */}
           {mode === "history" && (

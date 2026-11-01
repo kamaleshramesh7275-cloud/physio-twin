@@ -1,17 +1,29 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from "react";
-import { Canvas, useFrame, useLoader } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
-import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { OBJLoader } from "three-stdlib";
 import HoloOverlay from "./HoloOverlay";
-import { AlertTriangle, Flame, Layers, Sparkles, FlaskConical, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import {
+  AlertTriangle,
+  Flame,
+  Layers,
+  Sparkles,
+  Play,
+  Pause,
+  Compass,
+  Sliders,
+  Eye,
+  CheckCircle2,
+  Maximize2
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAvatar } from "./AvatarContext";
-import { Link } from "wouter";
 import type { GroupedRegionalInsight } from "./context/ClinicInsightsContext";
-import { REGION_BOUNDS_3D } from "./lib/regionBounds";
-import { MeshCalloutBox } from "./components/MeshCalloutBox";
+import { AnatomicalLayers } from "./components/AnatomicalLayers";
+import { BiomechanicalCalipers3D } from "./components/BiomechanicalCalipers3D";
+import type { MovementFrame } from "./lib/movementLibrary";
+import type { InspectionStation } from "./components/JointMicroInspectionPanel";
 
 export type ZoneId =
   | "head" | "neck" | "chest" | "lumbar"
@@ -35,12 +47,17 @@ export interface HoloModel3DProps {
   onLogPainClick?: (zone: ZoneId) => void;
   viewMode?: "scan" | "3d";
   onViewModeChange?: (mode: "scan" | "3d") => void;
-  /** Confirmed clinic insights grouped by anatomical zone */
   regionalInsights?: GroupedRegionalInsight[];
-  /** Movement scan target mode filter ("biceps-curls" | "squats" | "all") */
   scanFilter?: "biceps-curls" | "squats" | "all";
-  /** Live or session dynamic metrics to overlay on targeted joints */
   sessionMetrics?: Record<string, string>;
+
+  // ── Enhanced 3D Digital Twin Props ──
+  layerStep?: number; // 0 = Skin, 1 = Muscle, 2 = Bone, 3 = Force/Ligament
+  currentFrame?: MovementFrame | null;
+  showGhost?: boolean;
+  cameraFocusStation?: InspectionStation;
+  cameraPreset?: "front" | "side" | "top" | "orbit";
+  onStationSelect?: (station: InspectionStation) => void;
 }
 
 const HEAT_ZONES: ZoneId[] = [
@@ -56,459 +73,166 @@ const HEAT_ZONES: ZoneId[] = [
 ];
 
 const HEAT_RADII: Record<ZoneId, number> = {
-  head: 0.22,  neck: 0.16,  chest: 0.32,  lumbar: 0.30,
-  left_shoulder: 0.22,  right_shoulder: 0.22,
-  left_arm: 0.22,       right_arm: 0.22,
-  left_forearm: 0.18,   right_forearm: 0.18,
-  left_hip: 0.25,       right_hip: 0.25,
-  left_thigh: 0.28,     right_thigh: 0.28,
-  left_knee: 0.20,      right_knee: 0.20,
-  left_shin: 0.22,      right_shin: 0.22,
-  left_ankle: 0.16,     right_ankle: 0.16,
+  head: 0.22, neck: 0.16, chest: 0.32, lumbar: 0.30,
+  left_shoulder: 0.22, right_shoulder: 0.22,
+  left_arm: 0.22, right_arm: 0.22,
+  left_forearm: 0.18, right_forearm: 0.18,
+  left_hip: 0.25, right_hip: 0.25,
+  left_thigh: 0.28, right_thigh: 0.28,
+  left_knee: 0.20, right_knee: 0.20,
+  left_shin: 0.22, right_shin: 0.22,
+  left_ankle: 0.16, right_ankle: 0.16,
 };
 
-// Skin preset configurations
 type SkinPreset = "ecorche" | "clay" | "realistic" | "anatomy" | "thermal";
 const SKIN_PRESETS: Record<SkinPreset, { label: string; baseHex: string; roughness: number; metalness: number; opacity: number; emissiveHex: string; emissiveIntensity: number }> = {
-  ecorche: { label: "Écorché Anatomy", baseHex: "#d89b8a", roughness: 0.72, metalness: 0.02, opacity: 1.0, emissiveHex: "#221310", emissiveIntensity: 0.04 },
+  ecorche: { label: "Écorché Muscle", baseHex: "#d89b8a", roughness: 0.72, metalness: 0.02, opacity: 1.0, emissiveHex: "#221310", emissiveIntensity: 0.04 },
   clay: { label: "Anatomical Clay", baseHex: "#dbe0e6", roughness: 0.82, metalness: 0.0, opacity: 1.0, emissiveHex: "#1c2026", emissiveIntensity: 0.06 },
-  realistic: { label: "Realistic Human", baseHex: "#c68642", roughness: 0.62, metalness: 0.0, opacity: 1.0, emissiveHex: "#2a1506", emissiveIntensity: 0.08 },
-  anatomy: { label: "Anatomy Scan", baseHex: "#0e3b6b", roughness: 0.15, metalness: 0.2, opacity: 0.78, emissiveHex: "#062040", emissiveIntensity: 0.5 },
-  thermal: { label: "Thermal Imaging", baseHex: "#1a1a1a", roughness: 0.80, metalness: 0.0, opacity: 1.0, emissiveHex: "#000000", emissiveIntensity: 0.0 },
+  realistic: { label: "PBR Skin", baseHex: "#c68642", roughness: 0.62, metalness: 0.0, opacity: 1.0, emissiveHex: "#2a1506", emissiveIntensity: 0.08 },
+  anatomy: { label: "Anatomy Cyan", baseHex: "#0e3b6b", roughness: 0.15, metalness: 0.2, opacity: 0.78, emissiveHex: "#062040", emissiveIntensity: 0.5 },
+  thermal: { label: "Thermal Scan", baseHex: "#1a1a1a", roughness: 0.80, metalness: 0.0, opacity: 1.0, emissiveHex: "#000000", emissiveIntensity: 0.0 },
 };
 
-function InfoCard({ 
-  zoneId, 
-  risk, 
-  position, 
-  onLogPainClick,
-  sessionMetrics,
-  scanFilter
-}: { 
-  zoneId: ZoneId; 
-  risk: number; 
-  position: [number, number, number]; 
-  onLogPainClick?: (zone: ZoneId) => void;
-  sessionMetrics?: Record<string, string>;
-  scanFilter?: "biceps-curls" | "squats" | "all";
-}) {
-  const label = zoneId.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const riskText = risk >= 65 ? "High Pain/Strain" : risk >= 30 ? "Moderate Pain" : risk > 0 ? "Low Strain" : "Optimal Alignment";
-  const riskColor = risk >= 65 ? "text-rose-600" : risk >= 30 ? "text-amber-600" : risk > 0 ? "text-amber-500" : "text-emerald-600";
-  const isRightSide = zoneId.startsWith("right_");
-
-  const isArmZone = zoneId.includes("arm") || zoneId.includes("forearm") || zoneId.includes("shoulder");
-  const isKneeZone = zoneId.includes("knee") || zoneId.includes("thigh") || zoneId.includes("hip");
-
-  const scanBadge = scanFilter === "biceps-curls" && isArmZone
-    ? "💪 Bicep Curls — Arm Telemetry"
-    : scanFilter === "squats" && isKneeZone
-      ? "🏋️ Squats — Knee Telemetry"
-      : null;
-
-  // Format dynamic 5 biomechanical metrics
-  const symmetryVal = sessionMetrics?.bilateral_symmetry || `${Math.max(72, Math.round(98 - (risk * 0.22)))}%`;
-  const grfValue = sessionMetrics?.ground_reaction_force_bw
-    ? `${sessionMetrics.ground_reaction_force_bw} (${sessionMetrics.ground_reaction_force_n || ''})`
-    : `${(1.15 + (risk / 100) * 0.4).toFixed(2)} BW (${Math.round((9.81 + (risk / 100) * 2.4) * 72)} N)`;
-  const valgusVel = sessionMetrics?.valgus_velocity || `${(8.5 + (risk > 40 ? (risk * 0.15) : 0)).toFixed(1)} °/s`;
-  const angularAccel = sessionMetrics?.angular_acceleration || `${(28.0 + (risk * 0.2)).toFixed(1)} °/s²`;
-  const repDecay = sessionMetrics?.reps_decay || `${(risk * 0.18).toFixed(1)}% Fatigue Loss`;
-
-  return (
-    <Html position={position} zIndexRange={[100, 0]}>
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }} 
-        animate={{ opacity: 1, scale: 1 }} 
-        className={`relative bg-white/95 border border-slate-200/90 rounded-2xl p-3.5 text-xs pointer-events-auto w-64 shadow-2xl backdrop-blur-xl ${isRightSide ? "-translate-x-full -translate-y-1/2 -ml-4" : "-translate-y-1/2 ml-4"}`}
-      >
-        {scanBadge && (
-          <div className="mb-2 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-black tracking-wider uppercase flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            {scanBadge}
-          </div>
-        )}
-        <div className="flex justify-between items-center mb-1">
-          <span className="font-black text-slate-900 text-xs tracking-wide">{label}</span>
-          <span className={`font-mono font-black text-sm ${riskColor}`}>{risk}%</span>
-        </div>
-        <div className="flex justify-between text-[10px] text-slate-500 mb-2.5 pb-2 border-b border-slate-100">
-          <span>Target Joint Strain</span>
-          <span className={`font-bold ${riskColor}`}>{riskText}</span>
-        </div>
-        
-        {/* Muscle Biomechanics Detail Overlay */}
-        <div className="space-y-1.5 text-[10px] bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 mb-2.5 font-mono">
-          <div className="flex justify-between items-center text-slate-300">
-            <span className="text-slate-500 font-sans">Bilateral Symmetry</span>
-            <span className="font-bold text-emerald-700">{symmetryVal}</span>
-          </div>
-          <div className="flex justify-between items-center text-slate-300">
-            <span className="text-slate-500 font-sans">Ground Reaction Force</span>
-            <span className="font-bold text-blue-700">{grfValue}</span>
-          </div>
-          <div className="flex justify-between items-center text-slate-300">
-            <span className="text-slate-500 font-sans">Valgus Velocity</span>
-            <span className="font-bold text-purple-700">{valgusVel}</span>
-          </div>
-          <div className="flex justify-between items-center text-slate-300">
-            <span className="text-slate-500 font-sans">Angular Acceleration</span>
-            <span className="font-bold text-sky-700">{angularAccel}</span>
-          </div>
-          <div className="flex justify-between items-center text-slate-300">
-            <span className="text-slate-500 font-sans">Rep Fatigue Decay</span>
-            <span className="font-bold text-amber-700">{repDecay}</span>
-          </div>
-        </div>
-
-        {onLogPainClick && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onLogPainClick(zoneId); }}
-            className="w-full py-1.5 px-2 bg-amber-50 hover:bg-amber-100/70 border border-amber-300 rounded-lg text-amber-800 font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs"
-          >
-            <Flame className="w-3 h-3 text-amber-600" /> + Log Self-Reported Pain
-          </button>
-        )}
-      </motion.div>
-    </Html>
-  );
-}
-
-// ── Clinic Insight Marker — reuses identical InfoCard visual language ──────────
-function trendStatusColor(dir: string | undefined, status: string | undefined) {
-  if (status === "high" || status === "low" || status === "flagged") return "text-red-400";
-  if (dir === "up" || dir === "down") return "text-amber-400";
-  return "text-emerald-400";
-}
-function trendStatusLabel(dir: string | undefined, status: string | undefined) {
-  if (status === "high" || status === "low" || status === "flagged") return "Flagged";
-  if (dir === "up")   return "Rising";
-  if (dir === "down") return "Falling";
-  return "Stable";
-}
-
-function ClinicInsightMarker({
-  group,
-  position,
+// ── Smooth Camera Director with Cinematic Focal Lerping ──────────────────────
+function CinematicCameraController({
+  cameraFocusStation = "none",
+  cameraPreset = "front",
+  orbitControlsRef,
 }: {
-  group: GroupedRegionalInsight;
-  position: [number, number, number];
+  cameraFocusStation?: InspectionStation;
+  cameraPreset?: "front" | "side" | "top" | "orbit";
+  orbitControlsRef: React.RefObject<any>;
 }) {
-  const [open, setOpen] = useState(false);
-  const { metrics, hasFlagged } = group;
-  const isGroup = metrics.length > 1;
+  const { camera } = useThree();
 
-  // Offset slightly so it does not overlap the biomechanical InfoCard
-  const markerPos: [number, number, number] = [position[0] + 0.18, position[1], position[2]];
+  useFrame(() => {
+    let targetPos = new THREE.Vector3(0, 0.90, 3.2);
+    let targetLook = new THREE.Vector3(0, 0.88, 0);
 
-  return (
-    <Html position={markerPos} center zIndexRange={[90, 0]}>
-      <div className="relative">
-        {/* Glow dot / trigger */}
-        <button
-          onClick={() => setOpen(p => !p)}
-          className={`relative flex items-center justify-center w-5 h-5 rounded-full border shadow-lg cursor-pointer focus:outline-none transition-transform hover:scale-110 ${
-            hasFlagged
-              ? "bg-red-500/30 border-red-400/60 shadow-red-500/40"
-              : "bg-cyan-500/25 border-cyan-400/50 shadow-cyan-500/30"
-          }`}
-          aria-label={`Clinic insight for ${group.zone}`}
-        >
-          {/* Pulse ring */}
-          <span
-            className={`absolute inset-0 rounded-full animate-ping opacity-50 ${
-              hasFlagged ? "bg-red-400" : "bg-cyan-400"
-            }`}
-            style={{ animationDuration: hasFlagged ? "1.2s" : "2.4s" }}
-          />
-          {hasFlagged ? (
-            <AlertTriangle className="w-2.5 h-2.5 text-red-400 relative z-10" />
-          ) : (
-            <FlaskConical className="w-2.5 h-2.5 text-cyan-300 relative z-10" />
-          )}
-          {/* Count badge */}
-          {isGroup && (
-            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-white text-black text-[8px] font-black flex items-center justify-center z-20">
-              {metrics.length}
-            </span>
-          )}
-        </button>
+    if (cameraFocusStation === "knee") {
+      targetPos = new THREE.Vector3(0.20, 0.52, 1.2);
+      targetLook = new THREE.Vector3(0.12, 0.48, 0.06);
+    } else if (cameraFocusStation === "lumbar") {
+      targetPos = new THREE.Vector3(0, 1.16, 1.3);
+      targetLook = new THREE.Vector3(0, 1.12, 0.05);
+    } else if (cameraFocusStation === "shoulder") {
+      targetPos = new THREE.Vector3(0.28, 1.48, 1.1);
+      targetLook = new THREE.Vector3(0.21, 1.42, 0.0);
+    } else if (cameraPreset === "side") {
+      targetPos = new THREE.Vector3(3.2, 0.90, 0);
+      targetLook = new THREE.Vector3(0, 0.88, 0);
+    } else if (cameraPreset === "top") {
+      targetPos = new THREE.Vector3(0, 3.2, 0.1);
+      targetLook = new THREE.Vector3(0, 0.88, 0);
+    }
 
-        {/* Tooltip card — matches InfoCard style exactly */}
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              key="clinic-tip"
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 5 }}
-              transition={{ duration: 0.15 }}
-              className="absolute left-7 top-0 bg-white/95 border border-slate-200 rounded-xl px-3 py-2 text-xs w-56 shadow-2xl z-50 text-slate-800"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-white/10">
-                <span className="font-black text-white text-[11px] flex items-center gap-1">
-                  <FlaskConical className="w-3 h-3 text-cyan-400" />
-                  Lab Insights
-                </span>
-                <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700 text-[10px] cursor-pointer">
-                  ✕
-                </button>
-              </div>
+    // Smooth camera glide
+    camera.position.lerp(targetPos, 0.08);
+    if (orbitControlsRef.current) {
+      orbitControlsRef.current.target.lerp(targetLook, 0.08);
+      orbitControlsRef.current.update();
+    }
+  });
 
-              {/* Metric rows */}
-              <div className="space-y-1.5">
-                {metrics.map(m => {
-                  const dir    = m.prediction?.trend_direction;
-                  const status = m.latest_status;
-                  const isFl   = status === "high" || status === "low" || status === "flagged";
-                  return (
-                    <div key={m.metric_key} className="space-y-0.5">
-                      {/* Title row — font-bold text-white like existing InfoCard */}
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-slate-900">{m.canonical_name}</span>
-                        <span className="font-mono font-black text-white">
-                          {m.latest_value ?? "—"}
-                          <span className="text-gray-400 font-normal ml-0.5 text-[9px]">{m.unit}</span>
-                        </span>
-                      </div>
-                      {/* Trend row — styled like the 'Confidence: high' row */}
-                      <div className="flex justify-between text-[10px] text-gray-400">
-                        <span>Trend</span>
-                        <span className={trendStatusColor(dir, status)}>
-                          {trendStatusLabel(dir, status)}
-                        </span>
-                      </div>
-                      {isFl && (
-                        <div className="flex items-center gap-1 text-[10px] text-red-400">
-                          <AlertTriangle className="w-3 h-3 shrink-0" /> Outside reference range
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Report link tag */}
-              <div className="mt-2 pt-1.5 border-t border-white/10">
-                <Link
-                  href="/clinic"
-                  className="flex items-center gap-1 text-[10px] text-cyan-400/80 hover:text-cyan-300 transition-colors font-semibold"
-                  onClick={() => setOpen(false)}
-                >
-                  <ExternalLink className="w-3 h-3" /> From clinic report
-                </Link>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </Html>
-  );
+  return null;
 }
 
-// ── Realistic Human 3D Model ─────────────────────────────────────────────
+// ── Realistic 3D Humanoid Body Model Component ────────────────────────────────
 function RealHumanoid3D({
-  riskData, confidenceData, selectedZone, onZoneClick, onLogPainClick,
-  heatMapEnabled = true, preset = "ecorche",
-  regionalInsights = [],
+  riskData,
+  selectedZone,
+  onZoneClick,
+  preset = "ecorche",
+  heatMapEnabled = true,
+  layerStep = 0,
+  currentFrame,
+  showGhost = true,
 }: HoloModel3DProps & { heatMapEnabled?: boolean; preset?: SkinPreset }) {
   const { userHeight } = useAvatar();
-  
-  // Use the static OBJ mesh
   const obj = useLoader(OBJLoader, "/models/FinalBaseMesh.obj");
   const cfg = SKIN_PRESETS[preset];
 
-  // Shader uniforms for the heat-map additive overlay
+  // Derive skin mesh opacity from layerStep (fades as layerStep increases towards muscle/bones)
+  const skinOpacity = Math.max(0.05, Math.min(1.0, 1.0 - layerStep * 0.45));
+
   const uniformsRef = useRef({
-    uHeatCenters:      { value: Array.from({ length: 20 }, () => new THREE.Vector3()) },
-    uHeatRisks:        { value: new Float32Array(20) },
-    uHeatRadii:        { value: new Float32Array(20) },
-    uSelectedZoneIdx:  { value: -1 },
-    uHeatOpacity:      { value: heatMapEnabled ? 1.0 : 0.0 },
-    uTime:             { value: 0 },
-    uSkinMode:         { value: preset === "thermal" ? 1.0 : 0.0 },
+    uHeatCenters: { value: Array.from({ length: 20 }, () => new THREE.Vector3()) },
+    uHeatRisks: { value: new Float32Array(20) },
+    uHeatRadii: { value: new Float32Array(20) },
+    uSelectedZoneIdx: { value: -1 },
+    uHeatOpacity: { value: heatMapEnabled ? 1.0 : 0.0 },
+    uTime: { value: 0 },
+    uSkinMode: { value: preset === "thermal" ? 1.0 : 0.0 },
   });
 
   const { cloned, jointPositions } = useMemo(() => {
-    const c = obj.clone(true); // Clone the object group
-
-    // ── Scale to user height ──────────────────────────────────────────────────
+    const c = obj.clone(true);
     const baseScale = userHeight ? (userHeight / 100) / 1.78 : 1.0;
-    const meshCorrectionScale = 0.0858; 
-    const finalScale = baseScale * meshCorrectionScale;
-    
+    const finalScale = baseScale * 0.0858;
     c.scale.set(finalScale, finalScale, finalScale);
     c.position.set(0, 0, 0);
     c.updateMatrixWorld(true);
 
-    // ── Hardcoded anatomical positions for the static OBJ mesh ─────────────────
     const basePositions: Record<ZoneId, [number, number, number]> = {
-      head:           [0, 1.72, 0.02],
-      neck:           [0, 1.55, 0.02],
-      chest:          [0, 1.36, 0.08],
-      lumbar:         [0, 1.12, 0.05],
-      left_shoulder:  [0.21, 1.42, 0.0],
+      head: [0, 1.72, 0.02],
+      neck: [0, 1.55, 0.02],
+      chest: [0, 1.36, 0.08],
+      lumbar: [0, 1.12, 0.05],
+      left_shoulder: [0.21, 1.42, 0.0],
       right_shoulder: [-0.21, 1.42, 0.0],
-      left_arm:       [0.28, 1.22, -0.02],
-      right_arm:      [-0.28, 1.22, -0.02],
-      left_forearm:   [0.34, 1.02, -0.03],
-      right_forearm:  [-0.34, 1.02, -0.03],
-      left_hip:       [0.12, 0.95, 0.03],
-      right_hip:      [-0.12, 0.95, 0.03],
-      left_thigh:     [0.12, 0.72, 0.04],
-      right_thigh:    [-0.12, 0.72, 0.04],
-      left_knee:      [0.12, 0.48, 0.06],
-      right_knee:     [-0.12, 0.48, 0.06],
-      left_shin:      [0.11, 0.28, 0.05],
-      right_shin:     [-0.11, 0.28, 0.05],
-      left_ankle:     [0.10, 0.08, 0.03],
-      right_ankle:    [-0.10, 0.08, 0.03],
+      left_arm: [0.28, 1.22, -0.02],
+      right_arm: [-0.28, 1.22, -0.02],
+      left_forearm: [0.34, 1.02, -0.03],
+      right_forearm: [-0.34, 1.02, -0.03],
+      left_hip: [0.12, 0.95, 0.03],
+      right_hip: [-0.12, 0.95, 0.03],
+      left_thigh: [0.12, 0.72, 0.04],
+      right_thigh: [-0.12, 0.72, 0.04],
+      left_knee: [0.12, 0.48, 0.06],
+      right_knee: [-0.12, 0.48, 0.06],
+      left_shin: [0.11, 0.28, 0.05],
+      right_shin: [-0.11, 0.28, 0.05],
+      left_ankle: [0.10, 0.08, 0.03],
+      right_ankle: [-0.10, 0.08, 0.03],
     };
 
     const positions: Partial<Record<ZoneId, [number, number, number]>> = {};
     for (const [zone, pos] of Object.entries(basePositions) as [ZoneId, typeof basePositions[ZoneId]][]) {
-      positions[zone] = [
-        pos[0] * baseScale,
-        pos[1] * baseScale,
-        pos[2] * baseScale,
-      ];
+      positions[zone] = [pos[0] * baseScale, pos[1] * baseScale, pos[2] * baseScale];
     }
 
-    // ── Realistic PBR Skin Material ───────────────────────────────────────────
     const skinMat = new THREE.MeshStandardMaterial({
-      color:             new THREE.Color(cfg.baseHex),
-      emissive:          new THREE.Color(cfg.emissiveHex),
+      color: new THREE.Color(cfg.baseHex),
+      emissive: new THREE.Color(cfg.emissiveHex),
       emissiveIntensity: cfg.emissiveIntensity,
-      roughness:         cfg.roughness,
-      metalness:         cfg.metalness,
-      transparent:       cfg.opacity < 1,
-      opacity:           cfg.opacity,
-      side:              THREE.FrontSide,
-      depthWrite:        cfg.opacity >= 1,
+      roughness: cfg.roughness,
+      metalness: cfg.metalness,
+      transparent: skinOpacity < 0.99,
+      opacity: skinOpacity,
+      side: THREE.FrontSide,
     });
-
-    // GLSL patch — heat-map additive overlay on top of realistic skin
-    skinMat.onBeforeCompile = (shader) => {
-      shader.uniforms.uHeatCenters     = uniformsRef.current.uHeatCenters;
-      shader.uniforms.uHeatRisks       = uniformsRef.current.uHeatRisks;
-      shader.uniforms.uHeatRadii       = uniformsRef.current.uHeatRadii;
-      shader.uniforms.uSelectedZoneIdx = uniformsRef.current.uSelectedZoneIdx;
-      shader.uniforms.uHeatOpacity     = uniformsRef.current.uHeatOpacity;
-      shader.uniforms.uTime            = uniformsRef.current.uTime;
-      shader.uniforms.uSkinMode        = uniformsRef.current.uSkinMode;
-
-      // Vertex: pass world position for distance calculations
-      shader.vertexShader = `varying vec3 vWorldPos;\n` + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <worldpos_vertex>",
-        `#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
-      );
-
-      // Fragment: inject additive heat-map on top of PBR output
-      shader.fragmentShader = `
-        varying vec3 vWorldPos;
-        uniform vec3  uHeatCenters[20];
-        uniform float uHeatRisks[20];
-        uniform float uHeatRadii[20];
-        uniform int   uSelectedZoneIdx;
-        uniform float uHeatOpacity;
-        uniform float uTime;
-        uniform float uSkinMode;
-      ` + shader.fragmentShader;
-
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <dithering_fragment>",
-        `
-        #include <dithering_fragment>
-
-        if (uSkinMode > 0.5) {
-          float grey = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
-          gl_FragColor.rgb = vec3(grey) * 0.6;
-        }
-
-        // Procedural Athletic Performance Wear (Compression shorts & Short-Sleeve Athletic T-Shirt)
-        float wy = vWorldPos.y;
-        float wx = abs(vWorldPos.x);
-
-        bool isShorts        = (wy >= 0.46 && wy <= 0.94 && wx < 0.22);
-        bool isTShirtTorso   = (wy > 0.94 && wy <= 1.56 && wx < 0.26);
-        bool isTShirtSleeves = (wy >= 1.12 && wy <= 1.48 && wx >= 0.26 && wx <= 0.36);
-        bool isTShirt        = isTShirtTorso || isTShirtSleeves;
-
-        if (isShorts || isTShirt) {
-          vec3 clothColor = isShorts ? vec3(0.015, 0.02, 0.03) : vec3(0.02, 0.025, 0.035); // Deep obsidian matte black fabric
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, clothColor, 0.95);
-        }
-
-        if (uHeatOpacity > 0.001) {
-          vec3  heatAccum  = vec3(0.0);
-          float heatWeight = 0.0;
-
-          for (int i = 0; i < 20; i++) {
-            float risk = uHeatRisks[i];
-            if (risk <= 0.001) continue; // Untinted baseline when zero risk/heat
-
-            float r    = uHeatRadii[i];
-            float dist = distance(vWorldPos, uHeatCenters[i]);
-            if (dist >= r) continue;
-
-            // Continuous surface falloff calculation
-            float factor = pow(1.0 - smoothstep(0.0, r, dist), 1.35);
-
-            // Selection highlight rendering (cyan/emerald for selected zone, or gradient based on risk)
-            vec3 heatCol = vec3(0.92, 0.70, 0.05); // Yellow base (1-25%)
-            if (i == uSelectedZoneIdx) {
-              factor *= 1.85;
-              heatCol = vec3(0.0, 0.85, 0.95); // Cyan/Electric Blue selection glow
-            } else if (risk > 65.0) {
-              float t2 = clamp((risk - 65.0) / 35.0, 0.0, 1.0);
-              heatCol = mix(vec3(0.95, 0.40, 0.02), vec3(0.85, 0.05, 0.05), t2); // Orange to Deep Crimson Red
-            } else if (risk > 25.0) {
-              float t2 = clamp((risk - 25.0) / 40.0, 0.0, 1.0);
-              heatCol = mix(vec3(0.92, 0.70, 0.05), vec3(0.95, 0.40, 0.02), t2); // Yellow to Orange
-            }
-
-            heatAccum  += heatCol * (risk / 100.0) * factor;
-            heatWeight  = max(heatWeight, factor * (risk / 100.0));
-          }
-
-          if (heatWeight > 0.001) {
-            float blendAlpha = clamp(heatWeight * uHeatOpacity * 0.92, 0.0, 0.95);
-            vec3 targetHeatColor = heatAccum / max(0.01, heatWeight);
-            gl_FragColor.rgb = mix(gl_FragColor.rgb, targetHeatColor, blendAlpha * 0.90) + heatAccum * 0.45;
-            gl_FragColor.rgb = clamp(gl_FragColor.rgb, 0.0, 1.0);
-          }
-        }
-        `
-      );
-    };
 
     c.traverse((node: any) => {
       if (!node.isMesh) return;
-      node.castShadow    = true;
+      node.castShadow = true;
       node.receiveShadow = true;
-      node.frustumCulled = false;
       node.material = skinMat;
     });
 
     return { cloned: c, jointPositions: positions };
-  }, [obj, userHeight, preset]);
+  }, [obj, userHeight, preset, skinOpacity]);
 
-  // Sync uniforms every frame
   useFrame((state) => {
     const u = uniformsRef.current;
-    u.uTime.value       = state.clock.getElapsedTime();
-    u.uHeatOpacity.value= heatMapEnabled ? 1.0 : 0.0;
-    u.uSkinMode.value   = preset === "thermal" ? 1.0 : 0.0;
+    u.uTime.value = state.clock.getElapsedTime();
+    u.uHeatOpacity.value = heatMapEnabled ? 1.0 : 0.0;
+    u.uSkinMode.value = preset === "thermal" ? 1.0 : 0.0;
 
     let selIdx = -1;
     HEAT_ZONES.forEach((zone, idx) => {
-      const pos = jointPositions[zone];
+      const pos = currentFrame?.patientJoints?.[zone] || jointPositions[zone];
       if (pos) u.uHeatCenters.value[idx].set(...pos);
-      
-      // Force selection heatmap activation on click even for baseline 0% risk zones
+
       const isSel = selectedZone === zone;
       const rawRisk = riskData[zone] ?? 0;
       const effectiveRisk = isSel ? Math.max(rawRisk, 50) : rawRisk;
@@ -520,50 +244,62 @@ function RealHumanoid3D({
     u.uSelectedZoneIdx.value = selIdx;
   });
 
+  // Effective joint positions from current movement trajectory or standing baseline
+  const activeJoints = currentFrame?.patientJoints || jointPositions;
+
   return (
     <group>
-      <primitive object={cloned} />
+      {/* ── TIER 1: PBR SKIN MESH ──────────────────────────────────────── */}
+      {skinOpacity > 0.05 && <primitive object={cloned} />}
 
-      {/* Visible joint pin markers and raycast targets for ALL 20 anatomical body parts */}
+      {/* ── TIER 2, 3, 4: ANATOMICAL MULTI-LAYER CUTAWAY ───────────────── */}
+      {activeJoints && (
+        <AnatomicalLayers
+          joints={activeJoints as any}
+          layerStep={layerStep}
+          muscleActivations={currentFrame?.muscles || { vmo: 60, vl: 65, gluteMax: 50, gluteMed: 45, hamstrings: 40, erectorSpinae: 55 }}
+          grfMultiplier={currentFrame?.forces.grfMultiplierBW || 1.0}
+          aclStrainPct={currentFrame?.forces.aclStrainPct || 4.2}
+        />
+      )}
+
+      {/* ── 3D CALIPERS, PLUMB LINE & GHOST FORM ────────────────────────── */}
+      {activeJoints && (
+        <BiomechanicalCalipers3D
+          patientJoints={activeJoints as any}
+          ghostJoints={currentFrame?.ghostJoints}
+          kneeAngle={currentFrame?.angles.kneeFlexion || 165}
+          valgusDevCm={currentFrame?.angles.valgusDevCm || 1.2}
+          qAngleDeg={currentFrame?.angles.qAngleDeg || 14.0}
+          showGhost={showGhost}
+        />
+      )}
+
+      {/* ── INTERACTIVE JOINT HIT SPHERES ──────────────────────────────── */}
       {HEAT_ZONES.map((zone) => {
-        const pos = jointPositions[zone];
+        const pos = activeJoints?.[zone] || jointPositions[zone];
         if (!pos) return null;
-        const risk = riskData[zone] ?? 0;
-        const isSelected = selectedZone === zone;
-        const hitRadius = zone.includes("chest") || zone.includes("lumbar") ? 0.22 : zone.includes("thigh") ? 0.18 : 0.14;
+        const hitRadius = zone.includes("chest") || zone.includes("lumbar") ? 0.22 : 0.15;
 
         return (
           <group key={zone} position={pos}>
-            {/* Raycast hit sphere */}
-            <mesh 
+            <mesh
               visible={false}
-              onClick={(e) => { e.stopPropagation(); onZoneClick(zone); }}
-              onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-              onPointerOut={() => { document.body.style.cursor = "auto"; }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onZoneClick(zone);
+              }}
+              onPointerOver={(e) => {
+                e.stopPropagation();
+                document.body.style.cursor = "pointer";
+              }}
+              onPointerOut={() => {
+                document.body.style.cursor = "auto";
+              }}
             >
-              <sphereGeometry args={[hitRadius, 12, 12]} />
+              <sphereGeometry args={[hitRadius, 10, 10]} />
               <meshBasicMaterial />
             </mesh>
-
-            {selectedZone === zone && (
-              <InfoCard 
-                zoneId={zone} 
-                risk={risk} 
-                position={[0, 0.08, 0]} 
-                onLogPainClick={onLogPainClick}
-              />
-            )}
-          </group>
-        );
-      })}
-
-      {/* ── Clinic insight markers ─────────────────────────────────── */}
-      {regionalInsights.map((group) => {
-        const pos = jointPositions[group.zone];
-        if (!pos) return null;
-        return (
-          <group key={`clinic-${group.zone}`} position={pos}>
-            <ClinicInsightMarker group={group} position={[0, 0, 0]} />
           </group>
         );
       })}
@@ -571,111 +307,129 @@ function RealHumanoid3D({
   );
 }
 
-// ── 3D Asset Loading Overlay ───────────────────────────────────────────────
 function ModelLoadingOverlay() {
   return (
-    <Html center zIndexRange={[100, 0]}>
-      <div className="flex flex-col items-center justify-center p-6 rounded-3xl bg-black/85 backdrop-blur-2xl border border-cyan-500/30 text-white shadow-2xl min-w-[240px] text-center anim-fade">
-        <div className="relative w-14 h-14 mb-3 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20 animate-ping" />
-          <div className="w-12 h-12 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
-          <Sparkles className="w-5 h-5 text-cyan-400 absolute" />
-        </div>
-        <div className="text-xs font-black uppercase tracking-wider text-cyan-300">Loading 3D Twin Mesh</div>
-        <div className="text-[10px] text-slate-400 mt-1">Calibrating anatomical geometry...</div>
+    <Html center>
+      <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-zinc-950/90 border border-zinc-800 backdrop-blur-xl shadow-2xl text-center">
+        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-2" />
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-white">
+          Loading 3D Twin Rig
+        </span>
       </div>
     </Html>
   );
 }
 
-// ── Main HoloModel3D Viewport ─────────────────────────────────────────────────
 export default function HoloModel3D(props: HoloModel3DProps) {
+  const {
+    viewMode = "3d",
+    layerStep = 0,
+    currentFrame,
+    showGhost = true,
+    cameraFocusStation = "none",
+    cameraPreset = "front",
+  } = props;
+
   const [heatMapEnabled, setHeatMapEnabled] = useState(true);
   const [preset, setPreset] = useState<SkinPreset>("ecorche");
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
-  const activeMode = props.viewMode ?? "3d";
-  const regionalInsights = props.regionalInsights ?? [];
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  const orbitControlsRef = useRef<any>(null);
 
   const cyclePreset = () =>
-    setPreset(p => p === "ecorche" ? "clay" : p === "clay" ? "realistic" : p === "realistic" ? "anatomy" : p === "anatomy" ? "thermal" : "ecorche");
-
-  // Adaptive camera position for mobile portrait vs desktop landscape
-  const cameraPos: [number, number, number] = isMobile ? [0, 0.48, 4.0] : [0, 0.48, 3.1];
-  const cameraFov = isMobile ? 48 : 40;
+    setPreset((p) =>
+      p === "ecorche" ? "clay" : p === "clay" ? "realistic" : p === "realistic" ? "anatomy" : p === "anatomy" ? "thermal" : "ecorche"
+    );
 
   return (
-    <div className="absolute inset-0 z-0 overflow-hidden" style={{ background: "#e2e8f0" }}>
-      <div className="absolute inset-0 pointer-events-none z-10" style={{ background: "radial-gradient(ellipse at center, transparent 40%, rgba(148,163,184,0.30) 100%)" }} />
-      {activeMode === "scan" ? (
+    <div className="absolute inset-0 z-0 overflow-hidden bg-[#09090b]">
+      {viewMode === "scan" ? (
         <HoloOverlay {...props} />
       ) : (
         <>
-          <Canvas 
-            shadows={!isMobile} 
-            camera={{ position: cameraPos, fov: cameraFov }} 
-            gl={{ 
-              antialias: true, 
+          <Canvas
+            shadows
+            camera={{ position: [0, 0.90, 3.2], fov: 38 }}
+            gl={{
+              antialias: true,
               powerPreference: "high-performance",
-              toneMapping: THREE.ACESFilmicToneMapping, 
-              toneMappingExposure: 1.15 
+              toneMapping: THREE.ACESFilmicToneMapping,
+              toneMappingExposure: 1.25,
             }}
           >
-            <color attach="background" args={["#e2e8f0"]} />
-            <ambientLight intensity={0.7} color="#edf1f7" />
-            <directionalLight position={[2.2, 4.0, 3.2]} intensity={3.8} color="#ffffff" castShadow={!isMobile} />
-            <directionalLight position={[-2.4, 2.0, 2.2]} intensity={2.0} color="#dce6f2" />
-            <directionalLight position={[0.2, 2.8, -3.0]} intensity={2.8} color="#f4e8e1" />
-            <pointLight position={[0, 0.6, 1.8]} intensity={1.0} color="#f5e6de" />
-            
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow={!isMobile}>
-              <planeGeometry args={[6, 6]} />
-              <shadowMaterial opacity={0.12} />
+            {/* Studio Rim Lighting */}
+            <ambientLight intensity={0.8} color="#ffffff" />
+            <directionalLight position={[2.5, 3.5, 3]} intensity={3.2} color="#ffffff" castShadow />
+            <directionalLight position={[-3, 2, -2]} intensity={2.6} color="#ef4444" />
+            <directionalLight position={[3, 1.5, -2]} intensity={2.2} color="#06b6d4" />
+            <pointLight position={[0, 0.4, 1.8]} intensity={1.1} color="#f59e0b" />
+
+            {/* Dark Studio Circular Platform Floor */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
+              <planeGeometry args={[10, 10]} />
+              <shadowMaterial opacity={0.35} />
             </mesh>
 
+            {/* Concentric Stance Rings */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.015, 0]}>
+              <ringGeometry args={[0.3, 0.31, 32]} />
+              <meshBasicMaterial color={0x06b6d4} transparent opacity={0.25} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.015, 0]}>
+              <ringGeometry args={[0.55, 0.56, 32]} />
+              <meshBasicMaterial color={0xef4444} transparent opacity={0.25} side={THREE.DoubleSide} />
+            </mesh>
+
+            {/* Smooth Camera Transitions */}
+            <CinematicCameraController
+              cameraFocusStation={cameraFocusStation}
+              cameraPreset={cameraPreset}
+              orbitControlsRef={orbitControlsRef}
+            />
+
             <Suspense fallback={<ModelLoadingOverlay />}>
-              <RealHumanoid3D {...props} heatMapEnabled={heatMapEnabled} preset={preset} regionalInsights={regionalInsights} />
+              <RealHumanoid3D
+                {...props}
+                heatMapEnabled={heatMapEnabled}
+                preset={preset}
+                layerStep={layerStep}
+                currentFrame={currentFrame}
+                showGhost={showGhost}
+              />
             </Suspense>
 
-            <OrbitControls 
-              target={[0, 0.38, 0]} 
-              enablePan={false} 
-              minPolarAngle={Math.PI / 6} 
-              maxPolarAngle={Math.PI / 1.6} 
-              minDistance={1.2} 
-              maxDistance={5.0} 
-              dampingFactor={0.06} 
-              enableDamping 
+            <OrbitControls
+              ref={orbitControlsRef}
+              target={[0, 0.88, 0]}
+              enablePan={false}
+              minPolarAngle={Math.PI / 6}
+              maxPolarAngle={Math.PI / 1.7}
+              minDistance={1.0}
+              maxDistance={5.0}
+              dampingFactor={0.05}
+              enableDamping
             />
-            
-            {!isMobile && (
-              <EffectComposer>
-                <Bloom luminanceThreshold={0.80} luminanceSmoothing={0.9} intensity={0.25} height={256} />
-                <Vignette eskil={false} offset={0.35} darkness={0.50} />
-              </EffectComposer>
-            )}
           </Canvas>
 
-          {/* Preset Controls */}
-          <div className="absolute top-16 md:top-20 left-4 md:left-[272px] z-20 flex flex-row md:flex-col gap-2 pointer-events-auto">
-            <button onClick={() => setHeatMapEnabled(p => !p)} className={`px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold flex items-center gap-1.5 backdrop-blur-xl border shadow-sm transition-all cursor-pointer ${heatMapEnabled ? "bg-amber-50 border-amber-300 text-amber-800 shadow-amber-500/10" : "bg-white/90 border-slate-200 text-slate-700 hover:bg-white"}`}>
-              <Flame className={`w-3.5 h-3.5 ${heatMapEnabled ? "text-orange-400 animate-pulse" : "text-gray-500"}`} /> Heat Map {heatMapEnabled ? "ON" : "OFF"}
+          {/* Quick Toolbar (Heatmap, Material) */}
+          <div className="absolute top-16 md:top-20 left-4 md:left-[272px] z-20 flex flex-wrap gap-2 pointer-events-auto">
+            <button
+              onClick={() => setHeatMapEnabled((p) => !p)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 backdrop-blur-xl border transition-all cursor-pointer ${
+                heatMapEnabled
+                  ? "bg-amber-950/40 border-amber-500/40 text-amber-300"
+                  : "bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-white"
+              }`}
+            >
+              <Flame className={`w-3.5 h-3.5 ${heatMapEnabled ? "text-amber-400 animate-pulse" : "text-zinc-500"}`} />
+              <span>Heatmap {heatMapEnabled ? "ON" : "OFF"}</span>
             </button>
-            <button onClick={cyclePreset} className="px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold flex items-center gap-1.5 bg-white/90 border border-slate-200 text-slate-800 hover:bg-white backdrop-blur-xl shadow-sm transition-all cursor-pointer">
-              <Layers className="w-3.5 h-3.5 text-slate-400" /> {SKIN_PRESETS[preset].label}
-            </button>
-          </div>
 
-          <div className="hidden md:flex absolute bottom-4 left-4 z-20 pointer-events-none items-center gap-2 bg-white/90 backdrop-blur-md border border-slate-200 px-3.5 py-1.5 rounded-xl text-[11px] text-slate-700 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <span>Digital Twin · Real-time kinematic strain analysis active</span>
+            <button
+              onClick={cyclePreset}
+              className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 bg-zinc-900/80 border border-zinc-800 text-zinc-300 hover:text-white backdrop-blur-xl transition-all cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5 text-zinc-400" />
+              <span>{SKIN_PRESETS[preset].label}</span>
+            </button>
           </div>
         </>
       )}
