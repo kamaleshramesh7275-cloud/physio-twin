@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend
@@ -416,7 +416,14 @@ export default function Dashboard() {
           )}
 
           {rightRailTab === 'simulate' && (
-            <div className="h-full min-h-[400px]">
+            <div className="h-full min-h-[400px] flex flex-col space-y-3">
+              <Link
+                href="/simulator"
+                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-500/20"
+              >
+                <Target className="w-4 h-4" />
+                Launch Full What-If Simulator &rarr;
+              </Link>
               <SimulatorPanel 
                 currentReserve={displayData.reserve} 
                 currentRecovery={displayData.recovery} 

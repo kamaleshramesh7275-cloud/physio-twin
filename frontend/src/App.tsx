@@ -117,6 +117,7 @@ import WikiPage from "./WikiPage";
 import AchievementsPage from "./AchievementsPage";
 import PublicReviewPage from "./PublicReviewPage";
 import CoachPortalPage from "./CoachPortalPage";
+import SimulatorPage from "./SimulatorPage";
 import LoginPage from "./LoginPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
@@ -162,6 +163,9 @@ function AppContent() {
         
         {/* Protected Routes */}
         <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>
+        <Route path="/simulator"><ProtectedRoute component={SimulatorPage} /></Route>
+        <Route path="/exercises"><ProtectedRoute component={ProgramsPage} /></Route>
+        <Route path="/medical-history"><ProtectedRoute component={TimelinePage} /></Route>
         <Route path="/history"><ProtectedRoute component={TwinPage} /></Route>
         <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
         <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
