@@ -404,3 +404,4 @@ export const MOVEMENT_LIBRARY: Record<ExerciseType, ExerciseDefinition> = {
     frames: generatePressTrajectory(60),
   },
 };
+

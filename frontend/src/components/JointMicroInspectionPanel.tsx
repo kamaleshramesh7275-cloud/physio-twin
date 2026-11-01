@@ -158,3 +158,4 @@ export const JointMicroInspectionPanel: React.FC<JointMicroInspectionPanelProps>
     </div>
   );
 };
+

@@ -312,3 +312,4 @@ export const AnatomicalLayers: React.FC<AnatomicalLayersProps> = ({
     </group>
   );
 };
+
