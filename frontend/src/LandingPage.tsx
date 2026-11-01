@@ -24,7 +24,7 @@ import {
   Eye,
   GitBranch
 } from "lucide-react";
-import { HeroTelemetryPreview } from "./components/HeroTelemetryPreview";
+import { HeroRealisticTwin3D } from "./components/HeroRealisticTwin3D";
 
 export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<"valgus" | "lumbar" | "acwr">("valgus");
@@ -178,9 +178,9 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Embedded Interactive Telemetry Hardware Simulation */}
+        {/* Embedded Interactive Realistic 3D Musculoskeletal Twin */}
         <div className="mt-14 md:mt-18">
-          <HeroTelemetryPreview />
+          <HeroRealisticTwin3D />
         </div>
 
       </section>
@@ -827,3 +827,4 @@ export default function LandingPage() {
     </div>
   );
 }
+
