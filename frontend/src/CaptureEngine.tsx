@@ -51,7 +51,7 @@ function SetupStep({ num, title, desc }: { num: number; title: string; desc: str
     <div className="flex items-start gap-4">
       <div
         className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black text-white shrink-0 mt-0.5"
-        style={{ background: "linear-gradient(135deg,#0ea5e9,#8b5cf6)" }}
+        style={{ background: "linear-gradient(135deg, #ef4444, #991b1b)" }}
       >
         {num}
       </div>
@@ -818,7 +818,7 @@ function CaptureEngineContent() {
       <div className="min-h-screen bg-background flex flex-col items-center justify-start px-4 pt-8 pb-20 md:pb-8 relative overflow-hidden overflow-y-auto">
         {/* Background glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-10 blur-3xl pointer-events-none"
-          style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
+          style={{ background: "radial-gradient(ellipse, #ef4444, #991b1b)" }} />
 
         <div className="w-full max-w-5xl relative z-10 flex flex-col gap-6">
           
@@ -957,7 +957,7 @@ function CaptureEngineContent() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
-          style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
+          style={{ background: "radial-gradient(ellipse, #ef4444, #991b1b)" }} />
 
         <div className="w-full max-w-xl relative z-10">
           <button onClick={() => setStage("landing")} className="mb-6 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
@@ -1328,7 +1328,7 @@ function CaptureEngineContent() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
-          style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
+          style={{ background: "radial-gradient(ellipse, #ef4444, #991b1b)" }} />
 
         <div className="w-full max-w-xl relative z-10">
           <div className="text-center mb-10">
@@ -1401,7 +1401,7 @@ function CaptureEngineContent() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full opacity-10 blur-3xl pointer-events-none"
-          style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
+          style={{ background: "radial-gradient(ellipse, #ef4444, #991b1b)" }} />
 
         <div className="w-full max-w-lg relative z-10">
           {/* Back */}

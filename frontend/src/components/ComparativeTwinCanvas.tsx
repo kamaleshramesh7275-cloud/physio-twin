@@ -174,8 +174,8 @@ export const ComparativeTwinCanvas: React.FC<ComparativeTwinCanvasProps> = ({
     const height = container.clientHeight || 450;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0f1d);
-    scene.fog = new THREE.FogExp2(0x0a0f1d, 0.3);
+    scene.background = new THREE.Color(0x09090b);
+    scene.fog = new THREE.FogExp2(0x09090b, 0.3);
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 20);
@@ -501,3 +501,4 @@ export const ComparativeTwinCanvas: React.FC<ComparativeTwinCanvasProps> = ({
     </div>
   );
 };
+

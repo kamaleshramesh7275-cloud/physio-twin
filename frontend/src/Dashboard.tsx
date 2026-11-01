@@ -19,14 +19,14 @@ import { Sidebar } from "./components/Sidebar";
 function MetricRow({ label, value, delta, unit = '' }: { label: string; value: number; delta?: number; unit?: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
-      <span className="text-sm text-slate-600">{label}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex items-center gap-3">
         {delta !== undefined && (
-          <span className={`text-xs font-mono-numbers font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+          <span className={`text-xs font-mono-numbers font-semibold ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {delta >= 0 ? '+' : ''}{delta.toFixed(1)}%
           </span>
         )}
-        <span className="text-sm font-bold font-mono-numbers text-slate-900">{value.toFixed(1)}{unit}</span>
+        <span className="text-sm font-bold font-mono-numbers text-foreground">{value.toFixed(1)}{unit}</span>
       </div>
     </div>
   );
@@ -35,12 +35,12 @@ function MetricRow({ label, value, delta, unit = '' }: { label: string; value: n
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
-      <div className="card p-3 text-xs shadow-xl" style={{ background: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a' }}>
-        <p className="font-bold mb-1 text-slate-500">{label}</p>
+      <div className="p-3 text-xs rounded-xl shadow-2xl space-y-1.5" style={{ background: '#121215', border: '1px solid #27272a', color: '#f4f4f5' }}>
+        <p className="font-bold font-mono text-muted-foreground">{label}</p>
         {payload.map((p: any) => (
           <div key={p.name} className="flex justify-between gap-4">
             <span style={{ color: p.color }} className="font-medium">{p.name}</span>
-            <span className="font-mono-numbers font-bold text-slate-900">{p.value}</span>
+            <span className="font-mono-numbers font-bold text-foreground">{p.value}</span>
           </div>
         ))}
       </div>
@@ -98,7 +98,7 @@ export default function Dashboard() {
   if (loading || !data) {
     return (
       <div className="h-screen flex items-center justify-center flex-col gap-4 bg-background">
-        <div className="w-12 h-12 rounded-full border-3 border-blue-600 border-t-transparent animate-spin" />
+        <div className="w-12 h-12 rounded-full border-3 border-red-600 border-t-transparent animate-spin" />
         <p className="text-muted-foreground text-sm font-mono-numbers font-medium">Calibrating twin biometrics...</p>
       </div>
     );
@@ -142,13 +142,13 @@ export default function Dashboard() {
         {/* Header */}
         <header className="flex items-center justify-between pointer-events-auto">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">Digital Twin Overview</h1>
+            <h1 className="text-2xl font-black tracking-tight text-foreground">Digital Twin Overview</h1>
             <p className="text-muted-foreground text-sm mt-0.5">Biometric sync active · Updated just now</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="badge badge-purple">Human Kinetic Mode</span>
-            <span className="badge badge-cyan">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+            <span className="badge badge-red">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
               Live Telemetry
             </span>
             <button
@@ -162,17 +162,17 @@ export default function Dashboard() {
 
         {/* Alert Banner */}
         {data.change_point_alert && (
-          <div className="glow-border-destructive rounded-xl p-4 bg-rose-50/80 border border-rose-200 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in shadow-xs">
+          <div className="glow-border-destructive rounded-xl p-4 bg-red-950/40 border border-red-500/40 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in shadow-lg">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="text-rose-600 w-5 h-5 shrink-0 mt-0.5" />
+              <AlertTriangle className="text-red-400 w-5 h-5 shrink-0 mt-0.5" />
               <div>
-                <div className="font-bold text-rose-700 text-xs uppercase tracking-widest">Kinematic Alert</div>
-                <div className="text-sm mt-0.5 text-rose-950 font-medium">{data.change_point_alert}</div>
+                <div className="font-bold text-red-400 text-xs uppercase tracking-widest">Kinematic Alert</div>
+                <div className="text-sm mt-0.5 text-red-200 font-medium">{data.change_point_alert}</div>
               </div>
             </div>
             <button
               onClick={() => setSelectedMetric('Stability')}
-              className="text-xs font-bold text-rose-700 border border-rose-300 bg-white px-3 py-1.5 rounded-lg hover:bg-rose-100/50 transition-colors shrink-0 md:ml-4 w-full md:w-auto text-center cursor-pointer shadow-2xs"
+              className="text-xs font-bold text-red-300 border border-red-500/50 bg-red-950/60 px-3 py-1.5 rounded-lg hover:bg-red-900/50 transition-colors shrink-0 md:ml-4 w-full md:w-auto text-center cursor-pointer shadow-sm"
             >
               Investigate →
             </button>
@@ -182,27 +182,27 @@ export default function Dashboard() {
         {/* Score Cards Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 anim-up-d1">
           {[
-            { key: 'Mobility', val: displayData.mobility, delta: 2.3, color: '#2563eb', icon: <Dna className="w-5 h-5" />, spark: [{v:75},{v:76},{v:77},{v:78},{v:displayData.mobility}] },
-            { key: 'Stability', val: displayData.stability, delta: -14.5, color: '#d97706', icon: <Scale className="w-5 h-5" />, spark: [{v:70},{v:68},{v:65},{v:60},{v:displayData.stability}] },
-            { key: 'Quality', val: displayData.quality, delta: 0.8, color: '#059669', icon: <Sparkles className="w-5 h-5" />, spark: [{v:85},{v:85},{v:86},{v:86},{v:displayData.quality}] },
-            { key: 'Cardio', val: displayData.cardio, delta: 1.2, color: '#e11d48', icon: <HeartPulse className="w-5 h-5" />, spark: [{v:75},{v:76},{v:76},{v:77},{v:displayData.cardio}] },
-            { key: 'Recovery', val: displayData.recovery, delta: 3.1, color: '#7c3aed', icon: <Battery className="w-5 h-5" />, spark: [{v:80},{v:82},{v:85},{v:88},{v:displayData.recovery}] },
+            { key: 'Mobility', val: displayData.mobility, delta: 2.3, color: '#dc2626', icon: <Dna className="w-5 h-5 text-red-500" />, spark: [{v:75},{v:76},{v:77},{v:78},{v:displayData.mobility}] },
+            { key: 'Stability', val: displayData.stability, delta: -14.5, color: '#f59e0b', icon: <Scale className="w-5 h-5 text-amber-500" />, spark: [{v:70},{v:68},{v:65},{v:60},{v:displayData.stability}] },
+            { key: 'Quality', val: displayData.quality, delta: 0.8, color: '#10b981', icon: <Sparkles className="w-5 h-5 text-emerald-500" />, spark: [{v:85},{v:85},{v:86},{v:86},{v:displayData.quality}] },
+            { key: 'Cardio', val: displayData.cardio, delta: 1.2, color: '#ef4444', icon: <HeartPulse className="w-5 h-5 text-red-400" />, spark: [{v:75},{v:76},{v:76},{v:77},{v:displayData.cardio}] },
+            { key: 'Recovery', val: displayData.recovery, delta: 3.1, color: '#a855f7', icon: <Battery className="w-5 h-5 text-purple-400" />, spark: [{v:80},{v:82},{v:85},{v:88},{v:displayData.recovery}] },
           ].map(m => (
             <button
               key={m.key}
               onClick={() => {
                 handleSelectMetric(m.key);
               }}
-              className={`metric-card pointer-events-auto text-left transition-all overflow-hidden relative cursor-pointer ${selectedMetric === m.key ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-600/20' : ''}`}
+              className={`metric-card pointer-events-auto text-left transition-all overflow-hidden relative cursor-pointer ${selectedMetric === m.key ? 'border-red-600 bg-red-950/25 shadow-lg ring-2 ring-red-600/30' : ''}`}
             >
               <div className="flex items-center justify-between mb-2">
-                <div className="text-slate-500">{m.icon}</div>
-                <div className={`text-[10px] font-bold font-mono-numbers px-1.5 py-0.5 rounded ${m.delta >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                <div>{m.icon}</div>
+                <div className={`text-[10px] font-bold font-mono-numbers px-1.5 py-0.5 rounded ${m.delta >= 0 ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/30' : 'bg-red-950/40 text-red-400 border border-red-500/30'}`}>
                   {m.delta >= 0 ? '↑' : '↓'}{Math.abs(m.delta).toFixed(1)}%
                 </div>
               </div>
-              <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{m.key}</div>
-              <div className="text-2xl font-black font-mono-numbers mt-0.5 text-slate-900">{m.val.toFixed(0)}</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">{m.key}</div>
+              <div className="text-2xl font-black font-mono-numbers mt-0.5 text-foreground">{m.val.toFixed(0)}</div>
               
               <div className="h-8 w-full mt-3 -mx-2 -mb-2 opacity-75">
                 <ResponsiveContainer width="100%" height="100%">
@@ -223,20 +223,20 @@ export default function Dashboard() {
             {/* Radar */}
             <div className="metric-card glass-panel pointer-events-auto cursor-pointer" onClick={() => setSelectedMetric('Fingerprint')}>
               <div className="flex items-center justify-between mb-1">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Capability Fingerprint</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Capability Fingerprint</div>
                 <span className={`badge text-[10px] ${data.confidence === 'High' ? 'badge-green' : 'badge-yellow'}`}>{data.confidence} Conf</span>
               </div>
               <div className="flex items-center justify-between mb-3">
-                <div className="text-4xl font-black font-mono-numbers text-blue-600">{overallScore}</div>
-                <div className="text-xs text-slate-500 font-medium">Overall Score / 100</div>
+                <div className="text-4xl font-black font-mono-numbers text-red-500">{overallScore}</div>
+                <div className="text-xs text-muted-foreground font-medium">Overall Score / 100</div>
               </div>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart cx="50%" cy="50%" outerRadius="75%" data={fingerprintData}>
-                    <PolarGrid stroke="#e2e8f0" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
+                    <PolarGrid stroke="#27272a" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#a1a1aa', fontSize: 11, fontWeight: 600 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                    <Radar name="You" dataKey="A" stroke="#2563eb" fill="#3b82f6" fillOpacity={0.2} strokeWidth={2.5} />
+                    <Radar name="You" dataKey="A" stroke="#dc2626" fill="#ef4444" fillOpacity={0.25} strokeWidth={2.5} />
                   </RadarChart>
                 </ResponsiveContainer>
               </div>
@@ -244,7 +244,7 @@ export default function Dashboard() {
             
             {/* Synced Data Feed */}
             <div className="metric-card glass-panel pointer-events-auto flex-1">
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Connected Telemetry</div>
+              <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Connected Telemetry</div>
               <div className="space-y-4">
                 {externalData.length === 0 ? (
                   <div className="text-sm text-muted-foreground italic">No external data synced yet.</div>
@@ -255,11 +255,11 @@ export default function Dashboard() {
                       return (
                         <div key={i} className="flex flex-col gap-2 border-b border-border pb-3">
                           <div className="flex items-center gap-2">
-                            <Dumbbell className="w-4 h-4 text-purple-600" />
-                            <span className="font-semibold text-sm text-slate-900">Hevy App</span>
+                            <Dumbbell className="w-4 h-4 text-purple-400" />
+                            <span className="font-semibold text-sm text-foreground">Hevy App</span>
                           </div>
-                          <div className="text-xs text-slate-600">{w.name} • Load: {w.load}</div>
-                          <div className="text-[10px] text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-md inline-block w-fit font-medium">
+                          <div className="text-xs text-muted-foreground">{w.name} • Load: {w.load}</div>
+                          <div className="text-[10px] text-purple-300 bg-purple-950/40 border border-purple-500/30 px-2 py-0.5 rounded-md inline-block w-fit font-medium">
                             Affected: {w.affectedZones.join(', ')}
                           </div>
                         </div>
@@ -270,11 +270,11 @@ export default function Dashboard() {
                       return (
                         <div key={i} className="flex flex-col gap-2 border-b border-border pb-3">
                           <div className="flex items-center gap-2">
-                            <Apple className="w-4 h-4 text-emerald-600" />
-                            <span className="font-semibold text-sm text-slate-900">HealthifyMe</span>
+                            <Apple className="w-4 h-4 text-emerald-400" />
+                            <span className="font-semibold text-sm text-foreground">HealthifyMe</span>
                           </div>
-                          <div className="text-xs text-slate-600">{n.status} • {n.protein}</div>
-                          <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md inline-block w-fit font-medium">
+                          <div className="text-xs text-muted-foreground">{n.status} • {n.protein}</div>
+                          <div className="text-[10px] text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-md inline-block w-fit font-medium">
                             Hydration: {n.hydration}
                           </div>
                         </div>
@@ -287,31 +287,31 @@ export default function Dashboard() {
             </div>
 
             {/* Clinical Summary */}
-            <div className="metric-card glass-panel pointer-events-auto bg-blue-50/50 border-blue-200/80">
-              <div className="flex items-center gap-2 mb-2 text-blue-700">
+            <div className="metric-card glass-panel pointer-events-auto bg-red-950/20 border-red-500/30">
+              <div className="flex items-center gap-2 mb-2 text-red-400">
                 <Stethoscope className="w-4 h-4" />
                 <div className="text-xs font-bold uppercase tracking-widest">Clinical Kinetic Summary</div>
               </div>
-              <p className="text-xs text-slate-700 leading-relaxed">
-                Your recovery is trending positively, but your <span className="text-slate-900 font-semibold">Google Fit</span> telemetry flags a reduced HRV (45ms). Combined with a <span className="text-slate-900 font-semibold">+15% load spike</span> from yesterday's <span className="text-slate-900 font-semibold">Hevy</span> workout, your central nervous system is fatigued. <span className="text-emerald-700 font-semibold">Protein intake is optimal</span> for tissue repair. <br/><br/><strong>Recommendation:</strong> Prioritize active mobility and foam rolling today. Avoid heavy loads to prevent knee/lumbar strain.
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Your recovery is trending positively, but your <span className="text-white font-semibold">Google Fit</span> telemetry flags a reduced HRV (45ms). Combined with a <span className="text-red-400 font-semibold">+15% load spike</span> from yesterday's <span className="text-white font-semibold">Hevy</span> workout, your central nervous system is fatigued. <span className="text-emerald-400 font-semibold">Protein intake is optimal</span> for tissue repair. <br/><br/><strong>Recommendation:</strong> Prioritize active mobility and foam rolling today. Avoid heavy loads to prevent knee/lumbar strain.
               </p>
             </div>
           </div>
 
           {/* Right Column (Trend) */}
           <div className="metric-card glass-panel pointer-events-auto cursor-pointer flex flex-col" onClick={() => setSelectedMetric('Trend')}>
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Longitudinal Biometrics</div>
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Longitudinal Biometrics</div>
             <div className="w-full h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={activeTrendData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="#64748b" domain={[40, 100]} tick={{ fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis dataKey="name" stroke="#71717a" tick={{ fontSize: 11 }} />
+                  <YAxis stroke="#71717a" domain={[40, 100]} tick={{ fontSize: 11 }} />
                   <RechartsTooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                  <Line type="monotone" dataKey="mobility" stroke="#2563eb" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#2563eb' }} />
-                  <Line type="monotone" dataKey="stability" stroke="#d97706" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#d97706' }} />
-                  <Line type="monotone" dataKey="quality" stroke="#059669" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#059669' }} />
+                  <Line type="monotone" dataKey="mobility" stroke="#dc2626" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#dc2626' }} />
+                  <Line type="monotone" dataKey="stability" stroke="#f59e0b" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#f59e0b' }} />
+                  <Line type="monotone" dataKey="quality" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#10b981' }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -321,39 +321,39 @@ export default function Dashboard() {
         {/* Reserve + Timeline Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 anim-up-d3 pointer-events-auto">
           <div className="metric-card glass-panel cursor-pointer" onClick={() => setSelectedMetric('Reserve')}>
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Capability Reserve</div>
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Capability Reserve</div>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
-                  <span className="text-slate-600 font-medium">Current Demand</span>
-                  <span className="font-mono-numbers font-semibold text-slate-800">{(100 - displayData.reserve).toFixed(0)}%</span>
+                  <span className="text-muted-foreground font-medium">Current Demand</span>
+                  <span className="font-mono-numbers font-semibold text-foreground">{(100 - displayData.reserve).toFixed(0)}%</span>
                 </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                  <div className="h-full rounded-full bg-slate-400 transition-all duration-700"
+                <div className="h-2 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700">
+                  <div className="h-full rounded-full bg-zinc-600 transition-all duration-700"
                     style={{ width: `${100 - displayData.reserve}%` }} />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
-                  <span className="text-slate-600 font-medium">Reserve Remaining</span>
-                  <span className="font-mono-numbers font-bold text-blue-600">{data.reserve.toFixed(0)}%</span>
+                  <span className="text-muted-foreground font-medium">Reserve Remaining</span>
+                  <span className="font-mono-numbers font-bold text-red-500">{data.reserve.toFixed(0)}%</span>
                 </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                  <div className="h-full rounded-full bg-blue-600 transition-all duration-700"
+                <div className="h-2 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700">
+                  <div className="h-full rounded-full bg-red-600 transition-all duration-700"
                     style={{ width: `${data.reserve}%` }} />
                 </div>
               </div>
               <div className="pt-2 border-t border-border">
-                <div className="text-3xl font-black font-mono-numbers text-slate-900">{data.reserve.toFixed(0)}<span className="text-base font-bold text-slate-500">%</span></div>
-                <div className="text-xs text-slate-500 font-medium">reserve capacity available</div>
+                <div className="text-3xl font-black font-mono-numbers text-foreground">{data.reserve.toFixed(0)}<span className="text-base font-bold text-muted-foreground">%</span></div>
+                <div className="text-xs text-muted-foreground font-medium">reserve capacity available</div>
               </div>
             </div>
           </div>
 
           {/* Twin Timeline */}
           <div className="metric-card glass-panel md:col-span-2">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Twin Timeline</div>
-            <p className="text-xs text-slate-600 mb-4">Drag to rewind your biomechanical capability profile through history</p>
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">Twin Timeline</div>
+            <p className="text-xs text-muted-foreground mb-4">Drag to rewind your biomechanical capability profile through history</p>
             <input
               type="range"
               min="0" max="100"
@@ -361,16 +361,16 @@ export default function Dashboard() {
               onChange={(e) => setTimelineIndex(parseInt(e.target.value))}
               className="w-full cursor-pointer"
             />
-            <div className="flex justify-between text-xs text-slate-500 mt-2 font-mono-numbers font-medium">
+            <div className="flex justify-between text-xs text-muted-foreground mt-2 font-mono-numbers font-medium">
               <span>3 months ago</span>
               <span className="badge badge-purple">{timelineIndex === 100 ? 'Present Session' : `${100 - timelineIndex} days ago`}</span>
               <span>Today</span>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-3">
               {['Jul 1', 'Jul 15', 'Aug 3'].map((d, i) => (
-                <div key={d} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                  <div className="text-xs font-medium text-slate-500">{d}</div>
-                  <div className="text-lg font-black font-mono-numbers text-blue-600 mt-0.5">{[76.2, 80.1, parseFloat(overallScore)][i]}</div>
+                <div key={d} className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-center">
+                  <div className="text-xs font-medium text-muted-foreground">{d}</div>
+                  <div className="text-lg font-black font-mono-numbers text-red-500 mt-0.5">{[76.2, 80.1, parseFloat(overallScore)][i]}</div>
                 </div>
               ))}
             </div>
@@ -379,27 +379,27 @@ export default function Dashboard() {
       </main>
 
       {/* ── Right Rail ── */}
-      <aside className="w-full md:w-[320px] border-t md:border-t-0 md:border-l border-slate-200 flex flex-col md:overflow-hidden shrink-0 bg-white/95 backdrop-blur-xl z-20 pointer-events-auto shadow-xs">
+      <aside className="w-full md:w-[320px] border-t md:border-t-0 md:border-l border-[#27272a] flex flex-col md:overflow-hidden shrink-0 bg-[#09090b]/95 backdrop-blur-xl z-20 pointer-events-auto shadow-2xl">
         
         {/* Tabs */}
-        <div className="flex border-b border-border p-2 gap-2 bg-slate-50">
+        <div className="flex border-b border-[#27272a] p-2 gap-2 bg-[#121215]">
           <button 
             onClick={() => setRightRailTab('chat')}
-            className={`flex-1 py-2 text-xs font-bold flex items-center justify-center gap-1.5 rounded-lg transition-colors cursor-pointer ${rightRailTab === 'chat' ? 'bg-white shadow-xs text-blue-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
+            className={`flex-1 py-2 text-xs font-bold flex items-center justify-center gap-1.5 rounded-lg transition-colors cursor-pointer ${rightRailTab === 'chat' ? 'bg-red-950/50 shadow-xs text-red-400 border border-red-500/40' : 'text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200'}`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Chat
           </button>
           <button 
             onClick={() => setRightRailTab('simulate')}
-            className={`flex-1 py-2 text-xs font-bold flex items-center justify-center gap-1.5 rounded-lg transition-colors cursor-pointer ${rightRailTab === 'simulate' ? 'bg-white shadow-xs text-blue-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
+            className={`flex-1 py-2 text-xs font-bold flex items-center justify-center gap-1.5 rounded-lg transition-colors cursor-pointer ${rightRailTab === 'simulate' ? 'bg-red-950/50 shadow-xs text-red-400 border border-red-500/40' : 'text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200'}`}
           >
             <Target className="w-3.5 h-3.5" />
             Simulate
           </button>
           <button 
             onClick={() => setRightRailTab('inspect')}
-            className={`flex-1 py-2 text-xs font-bold flex items-center justify-center gap-1.5 rounded-lg transition-colors cursor-pointer ${rightRailTab === 'inspect' ? 'bg-white shadow-xs text-blue-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
+            className={`flex-1 py-2 text-xs font-bold flex items-center justify-center gap-1.5 rounded-lg transition-colors cursor-pointer ${rightRailTab === 'inspect' ? 'bg-red-950/50 shadow-xs text-red-400 border border-red-500/40' : 'text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200'}`}
           >
             <Search className="w-3.5 h-3.5" />
             Inspect
@@ -427,19 +427,19 @@ export default function Dashboard() {
 
           {rightRailTab === 'inspect' && (
             <div className="h-full flex flex-col">
-              <div className="font-bold text-sm mb-1 text-slate-900">Explainability Engine</div>
-              <div className="text-xs text-slate-500 mb-4">Click any metric or chart to inspect contributing factors</div>
+              <div className="font-bold text-sm mb-1 text-foreground">Explainability Engine</div>
+              <div className="text-xs text-muted-foreground mb-4">Click any metric or chart to inspect contributing factors</div>
 
               {!selectedMetric ? (
                 <div className="flex flex-col items-center justify-center h-40 text-center flex-1">
-                  <Search className="text-slate-400 w-8 h-8 mb-3 opacity-60" />
-                  <div className="text-xs text-slate-500">No metric selected.<br />Click a card or chart on the dashboard.</div>
+                  <Search className="text-zinc-600 w-8 h-8 mb-3 opacity-60" />
+                  <div className="text-xs text-muted-foreground">No metric selected.<br />Click a card or chart on the dashboard.</div>
                 </div>
               ) : (
                 <div className="space-y-4 animate-slide-right">
-                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
-                    <div className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-1">Analysis: {selectedMetric}</div>
-                    <p className="text-xs text-slate-700 leading-relaxed font-normal">
+                  <div className="p-3 rounded-xl bg-red-950/30 border border-red-500/30">
+                    <div className="text-xs font-bold text-red-400 uppercase tracking-widest mb-1">Analysis: {selectedMetric}</div>
+                    <p className="text-xs text-zinc-300 leading-relaxed font-normal">
                       {selectedMetric === 'Stability'
                         ? 'Your twin flags a persistent decline in stability across 3+ sessions. Primary driver is elevated postural sway detected on the Z-axis during Single-Leg Balance. Likely compounded by ankle strategy jitter.'
                         : `Your ${selectedMetric} metric is within expected bounds. Your twin is continuing to build a baseline over the next few sessions.`}
@@ -447,7 +447,7 @@ export default function Dashboard() {
                   </div>
 
                   <div>
-                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Contributing Factors</div>
+                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">Contributing Factors</div>
                     <div className="space-y-2">
                       <MetricRow label="Postural Sway (Z)" value={14.2} delta={14.2} />
                       <MetricRow label="Ankle Jitter" value={8.5} delta={8.5} />
@@ -456,12 +456,12 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30">
                     <div className="flex items-center gap-2 mb-1">
-                      <Brain className="w-4 h-4 text-emerald-600" />
-                      <div className="text-xs font-bold text-emerald-700">Twin Suggestion</div>
+                      <Brain className="w-4 h-4 text-emerald-400" />
+                      <div className="text-xs font-bold text-emerald-400">Twin Suggestion</div>
                     </div>
-                    <p className="text-xs text-slate-700 leading-relaxed">Focus on ankle mobility drills in your next session. Consider adding a Single-Leg Balance test to build a stronger baseline.</p>
+                    <p className="text-xs text-zinc-300 leading-relaxed">Focus on ankle mobility drills in your next session. Consider adding a Single-Leg Balance test to build a stronger baseline.</p>
                   </div>
                 </div>
               )}
