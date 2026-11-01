@@ -258,3 +258,4 @@ export function generateShareableUrl(sessionId: string): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "https://physiotwin.app";
   return `${origin}/review?id=${sessionId}`;
 }
+
