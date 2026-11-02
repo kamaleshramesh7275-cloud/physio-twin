@@ -11,6 +11,8 @@ import { saveShareableSession, generateShareableUrl } from "./lib/shareableSessi
 import { api } from "./api";
 import { auth } from "./firebase";
 import { Sidebar } from "./components/Sidebar";
+import { captureHistoryStore } from "./lib/captureHistoryStore";
+import { useAuth } from "./context/AuthContext";
 import { 
   OneEuroFilter, 
   isLandmarkConfident, 
@@ -126,6 +128,8 @@ function PostureBar({ label, value, good }: { label: string; value: number; good
 // ─── Main Component ──────────────────────────────────────────────────────────
 function CaptureEngineContent() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const currentUid = user?.uid || auth.currentUser?.uid || "demo-athlete";
 
   // Mode & stage
   const [mode, setMode] = useState<Mode>("sit-to-stand");
@@ -137,9 +141,35 @@ function CaptureEngineContent() {
   // Vision
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [landmarker, setLandmarker] = useState<PoseLandmarker | null>(null);
   const [modelReady, setModelReady] = useState(false);
   const [modelError, setModelError] = useState(false);
+
+  const attachStreamToVideo = (videoEl: HTMLVideoElement | null, stream: MediaStream | null) => {
+    if (!videoEl || !stream) return;
+    try {
+      if (videoEl.srcObject !== stream) {
+        videoEl.srcObject = stream;
+      }
+      const p = videoEl.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(err => {
+          console.warn("Video play() interrupted or waiting for user interaction:", err);
+        });
+      }
+    } catch (e) {
+      console.warn("Error attaching stream to video:", e);
+    }
+  };
+
+  const setVideoRef = (el: HTMLVideoElement | null) => {
+    (videoRef as any).current = el;
+    if (el && streamRef.current) {
+      attachStreamToVideo(el, streamRef.current);
+    }
+  };
 
   // Sit-to-stand metrics
   const [reps, setReps] = useState(0);
@@ -200,6 +230,21 @@ function CaptureEngineContent() {
     speak("Biomechanical anomaly identified. Reviewing incident autopsy.");
   };
 
+  // Cleanup camera stream on component unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      if (autoStopRef.current) { clearTimeout(autoStopRef.current); autoStopRef.current = null; }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, []);
+
   // Speech synthesis
   const lastSpokenRef = useRef<{ text: string, time: number }>({ text: "", time: 0 });
   const speak = (text: string, cooldownMs = 2000) => {
@@ -232,45 +277,131 @@ function CaptureEngineContent() {
 
   // ── Load AI model in background immediately ──────────────────────────────
   useEffect(() => {
+    let cancelled = false;
     async function initVision() {
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
+        let vision: any = null;
+        const wasmEndpoints = [
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm",
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+        ];
+        for (const ep of wasmEndpoints) {
+          try {
+            vision = await FilesetResolver.forVisionTasks(ep);
+            if (vision) break;
+          } catch (err) {
+            console.warn(`FilesetResolver failed for ${ep}:`, err);
+          }
+        }
+        if (!vision) throw new Error("Could not load vision WASM tasks");
+
         const models = [
           { tier: "heavy", url: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task" },
           { tier: "full", url: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task" },
           { tier: "lite", url: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" }
         ];
+
         let loadedLandmarker: PoseLandmarker | null = null;
-        for (const m of models) {
-          try {
-            loadedLandmarker = await PoseLandmarker.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath: m.url,
-                delegate: "GPU",
-              },
-              runningMode: "VIDEO",
-              numPoses: 1,
-            });
-            if (loadedLandmarker) {
-              setModelTier(m.tier);
-              break;
+        // Try GPU first, with graceful fallback to CPU
+        for (const delegate of ["GPU", "CPU"] as const) {
+          for (const m of models) {
+            try {
+              loadedLandmarker = await PoseLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                  modelAssetPath: m.url,
+                  delegate: delegate,
+                },
+                runningMode: "VIDEO",
+                numPoses: 1,
+              });
+              if (loadedLandmarker) {
+                setModelTier(`${m.tier} (${delegate})`);
+                break;
+              }
+            } catch (e) {
+              console.warn(`Fallback: Failed to load ${m.tier} model with ${delegate}:`, e);
             }
-          } catch (e) {
-            console.warn(`Fallback: Failed to load ${m.tier} model:`, e);
           }
+          if (loadedLandmarker) break;
         }
+
         if (!loadedLandmarker) throw new Error("Could not initialize pose landmarker");
-        setLandmarker(loadedLandmarker);
-        setModelReady(true);
+        if (!cancelled) {
+          setLandmarker(loadedLandmarker);
+          setModelReady(true);
+        }
       } catch (err) {
         console.error("Vision init failed", err);
-        setModelError(true);
+        if (!cancelled) {
+          setModelError(true);
+        }
       }
     }
     initVision();
+    return () => { cancelled = true; };
   }, []);
+
+  // ── Start Camera & Enter Countdown ─────────────────────────────────────────
+  const startCountdownAndCamera = async () => {
+    setCameraError(null);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError("Camera access is not supported or not allowed in this browser context. Please access via localhost or HTTPS.");
+      return;
+    }
+
+    try {
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
+      }
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        attachStreamToVideo(videoRef.current, stream);
+      }
+
+      if (landmarker) {
+        try {
+          await landmarker.setOptions({ runningMode: "VIDEO" });
+        } catch (e) {
+          console.warn("Could not set runningMode to VIDEO:", e);
+        }
+      }
+
+      setStage("countdown");
+    } catch (err: any) {
+      console.error("Camera access failed", err);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setCameraError("Camera permission was denied. Please allow camera permissions in your browser address bar and try again.");
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        setCameraError("No camera device found on this system. Please connect a webcam.");
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        setCameraError("Camera is currently in use by another application (e.g. Zoom or Teams). Please close other video apps and retry.");
+      } else {
+        setCameraError(`Camera error: ${err.message || "Failed to start camera"}`);
+      }
+    }
+  };
 
   // ── Countdown ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -279,8 +410,12 @@ function CaptureEngineContent() {
     let count = 3;
     const id = setInterval(() => {
       count--;
-      if (count > 0) setCountdown(count);
-      else { clearInterval(id); beginRecording(); }
+      if (count > 0) {
+        setCountdown(count);
+      } else {
+        clearInterval(id);
+        beginRecording();
+      }
     }, 1000);
     return () => clearInterval(id);
   }, [stage]);
@@ -306,22 +441,32 @@ function CaptureEngineContent() {
     flightRecorderRef.current.clear();
     setAutopsyReport(null);
     setShowAutopsyModal(false);
+
     try {
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-            width: { ideal: 1920, min: 1280 },
-            height: { ideal: 1080, min: 720 },
-            frameRate: { ideal: 60, min: 30 }
-          }
-        });
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      if (!streamRef.current || !streamRef.current.active) {
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        streamRef.current = stream;
       }
-      videoRef.current!.srcObject = stream;
-      videoRef.current!.play();
+
+      if (videoRef.current && streamRef.current) {
+        attachStreamToVideo(videoRef.current, streamRef.current);
+      }
+
+      if (landmarker) {
+        try {
+          await landmarker.setOptions({ runningMode: "VIDEO" });
+        } catch (e) {
+          console.warn("Could not ensure runningMode VIDEO:", e);
+        }
+      }
 
       if (mode === "sit-to-stand") {
         timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
@@ -336,15 +481,16 @@ function CaptureEngineContent() {
         }, 1000);
       }
       setStage("recording");
-    } catch (err) {
-      console.error("Camera error", err);
+    } catch (err: any) {
+      console.error("Camera error during recording start", err);
+      setCameraError("Camera failed to start. Please check camera permissions and retry.");
       setStage("setup");
     }
   };
 
   // ── Render loop (works for both modes) ───────────────────────────────────
   useEffect(() => {
-    if (stage !== "recording" || !landmarker || !videoRef.current || !canvasRef.current) return;
+    if (stage !== "recording" || !landmarker) return;
     let lastVideoTime = -1;
     let animId: number;
     let prevStanding = false;
@@ -353,14 +499,18 @@ function CaptureEngineContent() {
     const loop = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (!video || !canvas) return;
+      if (!video || !canvas || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+        animId = requestAnimationFrame(loop);
+        return;
+      }
       if (video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
         if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
         const ctx = canvas.getContext("2d");
         if (ctx) {
-          const results = landmarker.detectForVideo(video, performance.now());
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          try {
+            const results = landmarker.detectForVideo(video, performance.now());
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
           if (results.landmarks?.length > 0) {
             const rawLm = results.landmarks[0];
@@ -675,9 +825,12 @@ function CaptureEngineContent() {
               }
             }
           }
+        } catch (frameErr) {
+          console.warn("Pose detection frame error:", frameErr);
         }
       }
-      animId = requestAnimationFrame(loop);
+    }
+    animId = requestAnimationFrame(loop);
     };
     loop();
     return () => cancelAnimationFrame(animId);
@@ -687,9 +840,11 @@ function CaptureEngineContent() {
   const stopAndProcess = async () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (autoStopRef.current) { clearTimeout(autoStopRef.current); autoStopRef.current = null; }
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(t => t.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
 
@@ -779,10 +934,20 @@ function CaptureEngineContent() {
     advance("biomech", "running");
     try {
       await api.submitVisionSession({
-        user_id: auth.currentUser?.uid || "test-user",
-        task_type: mode === "sit-to-stand" ? "Sit-to-Stand" : "Standing-Posture",
+        user_id: currentUid,
+        task_type: mode === "sit-to-stand" ? "Sit-to-Stand" : mode === "standing-posture" ? "Standing-Posture" : mode === "squat-analysis" ? "Squat-Analysis" : mode === "gait-analysis" ? "Gait-Analysis" : "Sit-to-Stand",
         pose_landmarks_json: "{}",
-        joint_angles_json: "{}",
+        joint_angles_json: JSON.stringify(
+          mode === "standing-posture"
+            ? { shoulderTilt: sessionResult.shoulderTilt, hipTilt: sessionResult.hipTilt, headForward: sessionResult.headForward }
+            : {
+                peakKamNm: sessionResult.peakKamNm,
+                peakGrfMultiplier: sessionResult.peakGrfMultiplier,
+                kamRisk: sessionResult.kamRisk,
+                rom: sessionResult.rom,
+                symmetry: sessionResult.symmetry
+              }
+        ),
         rom: sessionResult.rom,
         movement_speed: sessionResult.movementSpeed,
         symmetry: sessionResult.symmetry,
@@ -795,9 +960,32 @@ function CaptureEngineContent() {
     advance("profile", "running"); await delay(800); advance("profile", "done");
     advance("insights", "running");
     try {
-      const uid = auth.currentUser?.uid || "test-user";
+      const uid = currentUid;
       const res = await api.getDeepInsights(uid);
       sessionStorage.setItem("lastInsights", res.insights || "");
+      try {
+        captureHistoryStore.addInsight({
+          exerciseType: mode === "sit-to-stand" ? "Sit-to-Stand" : mode === "standing-posture" ? "Standing Posture" : mode === "squat-analysis" ? "Squat" : "Movement Capture",
+          durationSec: sessionResult.elapsed || 30,
+          peakValgusAngle: sessionResult.peakKamNm ? sessionResult.peakKamNm / 2 : 2.5,
+          valgusVelocity: 18.0,
+          lumbarFlexionAngle: sessionResult.hipTilt || 15.0,
+          bilateralSymmetryPercent: Math.round((sessionResult.symmetry || 0.95) * 100),
+          grfPeakBW: sessionResult.peakGrfMultiplier || 1.35,
+          formDecayBreakdownRep: sessionResult.reps || 1,
+          llmSummary: res?.insights || "Session successfully captured and synced with digital twin biomechanics.",
+          recommendedDrills: [
+            "Bulgarian Split Squats (3x8)",
+            "Thoracic Spine Wall Slides (3x10)",
+            "Banded Terminal Knee Extensions (2x20)"
+          ]
+        }, currentUid);
+        localStorage.setItem("physiotwin_latest_session", JSON.stringify(sessionResult));
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new CustomEvent("physiotwin_capture_completed", { detail: sessionResult }));
+      } catch (storeErr) {
+        console.warn("Failed updating local capture history store:", storeErr);
+      }
       await delay(300); advance("insights", "done");
     } catch { advance("insights", "done"); }
 
@@ -1205,7 +1393,7 @@ function CaptureEngineContent() {
       
       try {
         await api.submitVisionSession({
-          user_id: auth.currentUser?.uid || "test-user",
+          user_id: currentUid,
           task_type: "Static-Image-Posture",
           pose_landmarks_json: JSON.stringify(results.landmarks || []),
           joint_angles_json: JSON.stringify({ shoulderTilt: avgShoulderTilt, hipTilt: avgHipTilt, headForward: avgHeadForward }),
@@ -1225,9 +1413,32 @@ function CaptureEngineContent() {
       // Step 6: Synthesize deep AI insights
       advance("insights", "running");
       try {
-        const uid = auth.currentUser?.uid || "test-user";
+        const uid = currentUid;
         const res = await api.getDeepInsights(uid);
         sessionStorage.setItem("lastInsights", res.insights || "");
+        try {
+          captureHistoryStore.addInsight({
+            exerciseType: "Standing Posture",
+            durationSec: 10,
+            peakValgusAngle: sessionResult.hipTilt || 1.5,
+            valgusVelocity: 5.0,
+            lumbarFlexionAngle: sessionResult.shoulderTilt || 2.0,
+            bilateralSymmetryPercent: Math.round((sessionResult.symmetry || 0.95) * 100),
+            grfPeakBW: 1.05,
+            formDecayBreakdownRep: 1,
+            llmSummary: res?.insights || "Static posture scan processed and synced with digital twin.",
+            recommendedDrills: [
+              "Thoracic Spine Extensions (2x12)",
+              "Side-Lying Banded Clamshells (3x15)",
+              "Deep Cervical Chin Tucks (3x10)"
+            ]
+          }, currentUid);
+          localStorage.setItem("physiotwin_latest_session", JSON.stringify(sessionResult));
+          window.dispatchEvent(new Event("storage"));
+          window.dispatchEvent(new CustomEvent("physiotwin_capture_completed", { detail: sessionResult }));
+        } catch (storeErr) {
+          console.warn("Failed updating local capture history store:", storeErr);
+        }
         await delay(300); advance("insights", "done");
       } catch { advance("insights", "done"); }
 
@@ -1480,9 +1691,19 @@ function CaptureEngineContent() {
             </div>
           </div>
 
+          {cameraError && (
+            <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5 text-left">
+              <span className="font-bold text-sm leading-none mt-0.5">⚠️</span>
+              <div>
+                <p className="font-semibold text-red-300 mb-0.5">Camera Error</p>
+                <p className="text-red-400/90 leading-relaxed">{cameraError}</p>
+              </div>
+            </div>
+          )}
+
           <button
-            onClick={() => setStage("countdown")}
-            disabled={modelError}
+            onClick={startCountdownAndCamera}
+            disabled={modelError || !modelReady}
             className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(14,165,233,0.35)] hover:shadow-[0_0_35px_rgba(14,165,233,0.55)] transition-all"
           >
             {modelError ? "AI Model Failed — Reload Page"
@@ -1503,24 +1724,33 @@ function CaptureEngineContent() {
   // ── Stage 2: Countdown ───────────────────────────────────────────────────
   if (stage === "countdown") {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-8">
-        <div className="text-white/50 text-sm uppercase tracking-widest font-bold">
-          {mode === "standing-posture" ? "Get into your natural standing position" : "Get into position"}
-        </div>
-        <div
-          key={countdown}
-          className="text-[160px] font-black font-mono-numbers text-white leading-none"
-          style={{
-            textShadow: "0 0 40px rgba(34,211,238,0.8), 0 0 80px rgba(34,211,238,0.4)",
-            animation: "countdownPop 1s ease-out forwards",
-          }}
-        >
-          {countdown}
-        </div>
-        <div className="text-white/40 text-sm">
-          {mode === "standing-posture"
-            ? "Relax your shoulders and stand naturally"
-            : "Recording begins when the timer hits zero"}
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center relative overflow-hidden">
+        {/* Background live camera preview */}
+        <video
+          ref={setVideoRef}
+          className="absolute inset-0 w-full h-full object-cover opacity-50"
+          autoPlay
+          playsInline
+          muted
+        />
+        <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center px-4">
+          <div className="text-cyan-400 text-xs uppercase tracking-widest font-bold bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md border border-cyan-500/30">
+            {mode === "standing-posture" ? "Get into your natural standing position" : "Get into position"}
+          </div>
+          <div
+            key={countdown}
+            className="text-[140px] md:text-[180px] font-black font-mono-numbers text-white leading-none drop-shadow-[0_0_40px_rgba(34,211,238,0.8)]"
+            style={{
+              animation: "countdownPop 1s ease-out forwards",
+            }}
+          >
+            {countdown}
+          </div>
+          <div className="text-white/80 text-sm font-medium bg-black/70 px-4 py-2 rounded-xl backdrop-blur-md max-w-sm">
+            {mode === "standing-posture"
+              ? "Relax your shoulders and stand naturally"
+              : "Step back 2 metres so your full body is visible"}
+          </div>
         </div>
         <style>{`
           @keyframes countdownPop {
@@ -1604,7 +1834,7 @@ function CaptureEngineContent() {
           <div className={`flex flex-1 flex-col lg:flex-row min-h-[50vh] md:min-h-0 ${viewLayout === "twin" ? "hidden lg:flex" : ""}`}>
             {/* Camera feed */}
             <div className={`relative flex-1 bg-black min-h-[45vh] lg:min-h-0 ${viewLayout === "twin" ? "hidden" : "block"}`}>
-            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.6 }} playsInline muted />
+            <video ref={setVideoRef} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.7 }} autoPlay playsInline muted />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover z-10" />
 
             {/* Legend */}

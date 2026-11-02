@@ -78,7 +78,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadData() {
       try {
-        const uid = user?.uid || "test-user";
+        const uid = user?.uid || "demo-athlete";
         const [dashRes, extRes] = await Promise.all([
           api.getDashboard(uid),
           api.getExternalApps(uid)
@@ -93,7 +93,15 @@ export default function Dashboard() {
       setLoading(false);
     }
     loadData();
-  }, []);
+
+    const handleUpdate = () => { loadData(); };
+    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("physiotwin_capture_completed", handleUpdate);
+    return () => {
+      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("physiotwin_capture_completed", handleUpdate);
+    };
+  }, [user]);
 
   if (loading || !data) {
     return (

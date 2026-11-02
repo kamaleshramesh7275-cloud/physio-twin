@@ -17,7 +17,7 @@ import { fetchGoogleHealthData } from "./lib/googleHealthApi";
 import { api } from "./api";
 import { useClinicInsights } from "./context/ClinicInsightsContext";
 import { SystemicInsightsPanel } from "./components/SystemicInsightsPanel";
-import { collectAllHeatSources, aggregateHeatSources } from "./lib/heatMapEngine";
+import { collectAllHeatSources, aggregateHeatSources, type RegionHeatSummary, type HeatSource } from "./lib/heatMapEngine";
 import { SelfReportPainModal } from "./components/SelfReportPainModal";
 import { auth } from "./firebase";
 import { BilateralSymmetryRadar } from "./components/BilateralSymmetryRadar";
@@ -138,6 +138,7 @@ export default function TwinPage() {
   const [selfReportTrigger, setSelfReportTrigger] = useState(0);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isHistoryWiped, setIsHistoryWiped] = useState(false);
   const [isDeletingHistory, setIsDeletingHistory] = useState(false);
   const [scanFilter, setScanFilter] = useState<"biceps-curls" | "squats" | "all">("all");
   const [deepMetrics, setDeepMetrics] = useState<Record<string, string>>({});
@@ -145,7 +146,8 @@ export default function TwinPage() {
   // ── Enhanced 3D Digital Twin Motion, Layer & Camera States ──
   const [layerStep, setLayerStep] = useState<number>(0); // 0 = Skin, 1 = Muscle, 2 = Bone, 3 = Force
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType>("squat");
-  const [isPlayingMotion, setIsPlayingMotion] = useState<boolean>(true);
+  const [isPlayingMotion, setIsPlayingMotion] = useState<boolean>(false);
+  const [legendCollapsed, setLegendCollapsed] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [frameIdx, setFrameIdx] = useState<number>(0);
   const [showGhost, setShowGhost] = useState<boolean>(true);
@@ -166,7 +168,7 @@ export default function TwinPage() {
   }, [isPlayingMotion, playbackSpeed, currentExerciseDef]);
 
   useEffect(() => {
-    const uid = user?.uid || auth.currentUser?.uid || "demo_user";
+    const uid = user?.uid || auth.currentUser?.uid || "demo-athlete";
     api.getDeepInsights(uid).then(res => {
       if (res && res.metrics) {
         setDeepMetrics(res.metrics);
@@ -182,29 +184,33 @@ export default function TwinPage() {
   const handleDeleteHistory = async () => {
     setIsDeletingHistory(true);
     try {
-      const uid = user?.uid || auth.currentUser?.uid || "demo_user";
-      await api.deleteCaptureHistory(uid);
-      if (uid !== "demo_user") {
-        await api.deleteCaptureHistory("demo_user").catch(() => {});
-      }
-      if (uid !== "dev-athlete") {
-        await api.deleteCaptureHistory("dev-athlete").catch(() => {});
-      }
+      const uid = user?.uid || (auth.currentUser ? auth.currentUser.uid : "demo-athlete");
 
-      // Purge session and local storage heat map & capture metrics
+      // 1. Immediately wipe all local & session storage and stores
       sessionStorage.removeItem("lastSession");
       sessionStorage.removeItem("lastMetrics");
       sessionStorage.removeItem("lastInsights");
       sessionStorage.removeItem("lastAnnotatedImage");
 
+      localStorage.removeItem("physiotwin_latest_session");
       localStorage.removeItem("pt_user_pain_zone");
       localStorage.removeItem("pt_user_pain_level");
       localStorage.removeItem("pt_self_reported_pain");
       localStorage.removeItem("physiotwin_capture_insights_history");
 
-      captureHistoryStore.clearAll(uid);
+      const uids = [uid, "demo-athlete", "demo_user", "test-user", "dev-athlete"];
+      for (const id of uids) {
+        localStorage.removeItem(`physiotwin_capture_insights_history_${id}`);
+        captureHistoryStore.clearAll(id);
+      }
+      captureHistoryStore.clearAll();
 
+      // Explicitly mark wiped in state
+      setIsHistoryWiped(true);
+
+      // Reset digital twin live risks and states to neutral baseline
       setHistoryData([]);
+      setProjections([]);
       setDynamicRisk(null);
       setDeepMetrics({});
       setLiveRisk({
@@ -218,6 +224,24 @@ export default function TwinPage() {
       setScanIngestSummary("All capture history, digital twin metrics, and heat map data completely wiped.");
       setShowCaptureToast(true);
       setShowDeleteModal(false);
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new Event("twin_data_deleted"));
+        window.dispatchEvent(new CustomEvent("physiotwin_capture_completed", { detail: null }));
+      }
+
+      // 2. Perform backend database deletion in background
+      try {
+        await api.deleteCaptureHistory(uid);
+        for (const fallback of ["demo-athlete", "demo_user", "test-user"]) {
+          if (fallback !== uid) {
+            await api.deleteCaptureHistory(fallback).catch(() => {});
+          }
+        }
+      } catch (beErr) {
+        console.warn("Backend deletion notice:", beErr);
+      }
     } catch (err) {
       console.error("Failed to delete capture history:", err);
     } finally {
@@ -226,26 +250,30 @@ export default function TwinPage() {
   };
 
   // Collect and aggregate all continuous heat sources
-  const lastSessionObj = JSON.parse(sessionStorage.getItem("lastSession") || "null");
-  const activeHeatSources = collectAllHeatSources({
+  const lastSessionObj = isHistoryWiped ? null : JSON.parse(sessionStorage.getItem("lastSession") || "null");
+  const activeHeatSources = isHistoryWiped ? [] : collectAllHeatSources({
     regionalInsights,
     userProfile: { painZone: localStorage.getItem("pt_user_pain_zone"), painLevel: localStorage.getItem("pt_user_pain_level") },
     lastSession: lastSessionObj,
   });
 
-  const aggregatedSummary = aggregateHeatSources(activeHeatSources);
+  const aggregatedSummary: Partial<Record<ZoneId, RegionHeatSummary>> = isHistoryWiped ? {} : aggregateHeatSources(activeHeatSources);
 
   // Map aggregated heat field severity percentages to dynamic risk map
   const aggregatedRiskMap: ZoneRisk = { ...liveRisk };
-  for (const [zKey, summary] of Object.entries(aggregatedSummary)) {
-    aggregatedRiskMap[zKey as ZoneId] = summary.riskPercentage;
+  if (!isHistoryWiped) {
+    for (const [zKey, summary] of Object.entries(aggregatedSummary)) {
+      if (summary) {
+        aggregatedRiskMap[zKey as ZoneId] = (summary as RegionHeatSummary).riskPercentage;
+      }
+    }
   }
 
   // Fetch Dashboard, History, and Projections from real API
   useEffect(() => {
     const loadData = async () => {
       try {
-        const uid = user?.uid || "demo_user";
+        const uid = user?.uid || auth.currentUser?.uid || "demo-athlete";
         const [dash, hist, proj] = await Promise.all([
           api.getDashboard(uid).catch(e => { console.error(e); return { zone_risks: {} }; }),
           api.getSessionHistory(uid).catch(e => { console.error(e); return []; }),
@@ -255,7 +283,7 @@ export default function TwinPage() {
         let initialRisk: ZoneRisk = dash.zone_risks || {};
 
         // Ingest recent local posture scan if available in sessionStorage
-        const rawLastSession = sessionStorage.getItem("lastSession");
+        const rawLastSession = sessionStorage.getItem("lastSession") || localStorage.getItem("physiotwin_latest_session");
         if (rawLastSession) {
           try {
             const ls = JSON.parse(rawLastSession);
@@ -329,6 +357,16 @@ export default function TwinPage() {
       }
     };
     loadData();
+
+    const handleCaptureUpdate = () => {
+      loadData();
+    };
+    window.addEventListener("storage", handleCaptureUpdate);
+    window.addEventListener("physiotwin_capture_completed", handleCaptureUpdate);
+    return () => {
+      window.removeEventListener("storage", handleCaptureUpdate);
+      window.removeEventListener("physiotwin_capture_completed", handleCaptureUpdate);
+    };
   }, [user, selfReportTrigger]);
 
   const [dynamicRisk, setDynamicRisk] = useState<ZoneRisk | null>(null);
@@ -338,22 +376,31 @@ export default function TwinPage() {
 
   const currentHistoryItem = historyData.length > 0 ? historyData[histCursor] : null;
 
+  const ZERO_RISK: ZoneRisk = {
+    head: 0, neck: 0, chest: 0, lumbar: 0,
+    left_shoulder: 0, right_shoulder: 0, left_arm: 0, right_arm: 0,
+    left_forearm: 0, right_forearm: 0, left_hip: 0, right_hip: 0,
+    left_thigh: 0, right_thigh: 0, left_knee: 0, right_knee: 0,
+    left_shin: 0, right_shin: 0, left_ankle: 0, right_ankle: 0
+  };
+
   const displayRisk: ZoneRisk =
+    isHistoryWiped        ? ZERO_RISK :
     mode === "active"     ? (dynamicRisk || (Object.keys(aggregatedSummary).length > 0 ? aggregatedRiskMap : liveRisk)) :
     mode === "history"    ? (currentHistoryItem ? { ...liveRisk, left_knee: currentHistoryItem.rom < 85 ? 80 : 40 } : liveRisk) :
     activeProjections.length > 0
       ? (showTreatment ? activeProjections[projIdx].withTreatment : activeProjections[projIdx].zones)
       : liveRisk;
 
-  const score      = overallScore(displayRisk);
+  const score      = isHistoryWiped ? 100 : overallScore(displayRisk);
   const zoneMeta   = selectedZone ? DETAILED_ZONE_META[selectedZone as ZoneId] : undefined;
   const basicMeta  = selectedZone ? ZONE_META[selectedZone] : undefined;
   const zoneRisk   = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
 
   // ── Dynamic Biomechanical Telemetry Calculation ──────────────
-  const activeLatestCapture = captureHistoryStore.getLatest();
+  const activeLatestCapture = isHistoryWiped ? null : captureHistoryStore.getLatest();
   const activeZoneRisk = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
-  const isCleanState = Object.keys(aggregatedSummary).length === 0 && !lastSessionObj && !activeLatestCapture;
+  const isCleanState = isHistoryWiped || (Object.keys(aggregatedSummary).length === 0 && !lastSessionObj && !activeLatestCapture);
 
   // 1. Dynamic Bilateral Symmetry Radar Joints
   const dynamicSymmetryJoints = isCleanState
@@ -459,7 +506,8 @@ export default function TwinPage() {
       });
 
   const topRisk = ALL_ZONES
-    .map(id => ({ id, risk: liveRisk[id] ?? 0 }))
+    .map(id => ({ id, risk: displayRisk[id] ?? 0 }))
+    .filter(item => item.risk > 0)
     .sort((a, b) => b.risk - a.risk)
     .slice(0, 5);
 
@@ -516,31 +564,52 @@ export default function TwinPage() {
       )}
       
       {/* ── Clinical Pain-Map Legend ── */}
-      <div className="absolute bottom-20 md:bottom-6 left-3 md:left-[272px] pointer-events-auto z-20 bg-[#121215]/95 backdrop-blur-md border border-[#27272a] p-3.5 rounded-2xl flex flex-col gap-2.5 shadow-2xl w-60">
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-black flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" /> Clinical Pain Field
+      <div className={`absolute ${mode === "active" ? "bottom-[185px] sm:bottom-[175px]" : "bottom-20 md:bottom-6"} left-3 md:left-[272px] pointer-events-auto z-20 transition-all duration-300`}>
+        {legendCollapsed ? (
+          <button
+            onClick={() => setLegendCollapsed(false)}
+            className="bg-[#121215]/95 backdrop-blur-md border border-[#27272a] px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2 text-[10px] font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span>Pain Map ({Object.keys(aggregatedSummary).length})</span>
+          </button>
+        ) : (
+          <div className="bg-[#121215]/95 backdrop-blur-md border border-[#27272a] p-3 rounded-2xl flex flex-col gap-2 shadow-2xl w-56">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-black flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" /> Clinical Pain Field
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-1.5 py-0.5 rounded-md">
+                  {Object.keys(aggregatedSummary).length} Regions
+                </span>
+                <button 
+                  onClick={() => setLegendCollapsed(true)} 
+                  className="text-zinc-500 hover:text-zinc-300 text-xs px-1 cursor-pointer"
+                  title="Minimize legend"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Continuous Color Gradient Bar */}
+            <div className="h-1.5 w-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 border border-[#27272a] shadow-inner" />
+
+            <div className="flex justify-between text-[9px] font-bold text-muted-foreground">
+              <span className="text-emerald-400">Low (1-30%)</span>
+              <span className="text-amber-400">Mid (30-65%)</span>
+              <span className="text-red-400">High (65-100%)</span>
+            </div>
+
+            <button
+              onClick={() => setSelfReportModalZone(selectedZone || "lumbar")}
+              className="mt-0.5 w-full py-1.5 px-2 bg-red-950/40 hover:bg-red-900/50 border border-red-500/30 rounded-xl text-red-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            >
+              + Log Patient Pain Score
+            </button>
           </div>
-          <span className="text-[9px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-1.5 py-0.5 rounded-md">
-            {Object.keys(aggregatedSummary).length} Regions
-          </span>
-        </div>
-
-        {/* Continuous Color Gradient Bar */}
-        <div className="h-2 w-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 border border-[#27272a] shadow-inner" />
-
-        <div className="flex justify-between text-[9px] font-bold text-muted-foreground">
-          <span className="text-emerald-400">Low (1-30%)</span>
-          <span className="text-amber-400">Mid (30-65%)</span>
-          <span className="text-red-400">High (65-100%)</span>
-        </div>
-
-        <button
-          onClick={() => setSelfReportModalZone(selectedZone || "lumbar")}
-          className="mt-1 w-full py-1.5 px-2 bg-red-950/40 hover:bg-red-900/50 border border-red-500/30 rounded-xl text-red-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-        >
-          + Log Patient Pain Score
-        </button>
+        )}
       </div>
 
       <Sidebar />
@@ -709,7 +778,7 @@ export default function TwinPage() {
                 <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center gap-3 shadow-xl animate-in fade-in slide-in-from-top-3 max-w-md">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                   <div className="leading-snug">
-                    <div className="text-emerald-950 font-black">Posture Scan Ingested into Digital Twin!</div>
+                    <div className="text-emerald-950 font-black">{isHistoryWiped ? "Capture & Twin History Wiped" : "Posture Scan Ingested into Digital Twin!"}</div>
                     <div className="text-[11px] font-normal text-emerald-800">
                       {scanIngestSummary || "Digital Twin updated with your live joint angles and posture alignment scan."}
                     </div>
@@ -749,6 +818,7 @@ export default function TwinPage() {
                       onClick={() => {
                         setSelectedExercise(ex);
                         setFrameIdx(0);
+                        setIsPlayingMotion(false);
                       }}
                       className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold transition-all cursor-pointer ${
                         selectedExercise === ex
@@ -807,10 +877,25 @@ export default function TwinPage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => setIsPlayingMotion(!isPlayingMotion)}
-                    className="p-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all shadow-md cursor-pointer"
-                    title={isPlayingMotion ? "Pause Playback" : "Play Simulation"}
+                    className={`p-2 rounded-xl font-bold transition-all shadow-md cursor-pointer flex items-center justify-center ${
+                      isPlayingMotion 
+                        ? "bg-amber-600 hover:bg-amber-500 text-white" 
+                        : "bg-red-600 hover:bg-red-500 text-white"
+                    }`}
+                    title={isPlayingMotion ? "Pause Animation (Stay Still)" : "Play Movement Simulation"}
                   >
                     {isPlayingMotion ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white" />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsPlayingMotion(false);
+                      setFrameIdx(0);
+                    }}
+                    className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
+                    title="Reset to Neutral Standing Stance"
+                  >
+                    <RotateCcw className="w-4 h-4" />
                   </button>
 
                   <div className="flex bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 text-[10px] font-mono">
@@ -993,16 +1078,16 @@ export default function TwinPage() {
                   </div>
 
                   {/* Contributing Pain Sources Breakdown */}
-                  {selectedZone && aggregatedSummary[selectedZone]?.sources && aggregatedSummary[selectedZone].sources.length > 0 && (
+                  {selectedZone && aggregatedSummary[selectedZone]?.sources && (aggregatedSummary[selectedZone]?.sources?.length ?? 0) > 0 && (
                     <div className="bg-[#121215] border border-[#27272a] rounded-2xl p-4 shadow-sm">
                       <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2 flex items-center justify-between">
                         <span>Contributing Pain Sources</span>
                         <span className="text-[9px] font-mono text-muted-foreground bg-zinc-800 px-2 py-0.5 rounded-md">
-                          {aggregatedSummary[selectedZone].sources.length} active
+                          {aggregatedSummary[selectedZone]?.sources?.length} active
                         </span>
                       </div>
                       <div className="space-y-2">
-                        {aggregatedSummary[selectedZone].sources.map(src => (
+                        {aggregatedSummary[selectedZone]?.sources?.map((src: HeatSource) => (
                           <div key={src.id} className="bg-[#18181b] border border-[#27272a] rounded-xl p-2.5 text-xs">
                             <div className="flex justify-between items-center mb-1">
                               <span className="font-bold text-foreground flex items-center gap-1.5 break-words">
@@ -1134,21 +1219,33 @@ export default function TwinPage() {
               ) : (
                 <>
                   <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-3">Highest Risk Zones</div>
-                  <p className="text-sm text-zinc-300 mb-6 leading-relaxed">Select any highlighted body part on the 3D model, or pick from the list below to see injury root causes and treatment plans.</p>
-                  <div className="space-y-2">
-                    {topRisk.map(({ id, risk }) => (
-                      <button key={id} onClick={() => setSelectedZone(id)}
-                        className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl bg-[#18181b] hover:bg-[#27272a] text-sm text-left transition-all border border-[#27272a] hover:border-red-500/40 shadow-xs cursor-pointer">
-                        <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ background:riskColor(risk), color:riskColor(risk) }} />
-                        <span className="flex-1 font-bold text-foreground">{ZONE_META[id]?.label ?? id.replace(/_/g," ")}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-lg" style={{ color:riskColor(risk) }}>{risk}</span>
-                          {risk >= 70 ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <TrendingUp className="w-4 h-4 text-amber-400" />}
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-zinc-500" />
-                      </button>
-                    ))}
-                  </div>
+                  {topRisk.length > 0 ? (
+                    <>
+                      <p className="text-sm text-zinc-300 mb-6 leading-relaxed">Select any highlighted body part on the 3D model, or pick from the list below to see injury root causes and treatment plans.</p>
+                      <div className="space-y-2">
+                        {topRisk.map(({ id, risk }) => (
+                          <button key={id} onClick={() => setSelectedZone(id)}
+                            className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl bg-[#18181b] hover:bg-[#27272a] text-sm text-left transition-all border border-[#27272a] hover:border-red-500/40 shadow-xs cursor-pointer">
+                            <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ background:riskColor(risk), color:riskColor(risk) }} />
+                            <span className="flex-1 font-bold text-foreground">{ZONE_META[id]?.label ?? id.replace(/_/g," ")}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-black text-lg" style={{ color:riskColor(risk) }}>{risk}</span>
+                              {risk >= 70 ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <TrendingUp className="w-4 h-4 text-amber-400" />}
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-zinc-500" />
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-5 rounded-2xl bg-[#18181b]/80 border border-emerald-500/30 text-center space-y-2 my-2 shadow-inner">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                      <div className="text-sm font-bold text-foreground">Zero Biomechanical Risk Detected</div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        All kinematic captures and heat map data have been wiped. The 3D model is in a clean, healthy baseline state.
+                      </p>
+                    </div>
+                  )}
 
                   {/* 5 Biomechanical Capture Sub-Feature Panels */}
                   <div className="space-y-4 border-t border-[#27272a] pt-4 mt-6">
@@ -1301,7 +1398,7 @@ export default function TwinPage() {
                 disabled={isDeletingHistory}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-red-950/50 border border-red-500/40"
               >
-                {isDeletingHistory ? "Deleting..." : "Yes, Delete All"}
+                {isDeletingHistory ? "DELETING..." : "YES, DELETE ALL"}
               </button>
             </div>
           </div>

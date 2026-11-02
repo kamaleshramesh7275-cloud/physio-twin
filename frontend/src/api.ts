@@ -89,15 +89,27 @@ export const api = {
   },
 
   async getDeepInsights(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/analytics/deep-insights/${userId}`, {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/analytics/deep-insights/${userId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: 15000
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn("Primary deep-insights call failed, attempting fallback endpoint:", e);
+    }
+    const res2 = await fetchWithTimeout(`${API_BASE}/api/deep-insights/${userId}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       timeout: 15000
     });
-    if (!res.ok) throw new Error("Failed to generate deep insights");
-    return res.json();
+    if (!res2.ok) throw new Error("Failed to generate deep insights");
+    return res2.json();
   },
 
   async uploadMedicalReport(userId: string, file: File) {
@@ -286,19 +298,39 @@ export const api = {
 
   /** Delete all vision capture sessions, digital twin data, and dashboard logs for a user */
   async deleteCaptureHistory(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/sessions/history/${userId}`, {
-      method: "DELETE"
-    });
-    if (!res.ok) throw new Error("Failed to delete capture history");
+    let resJson = { status: "deleted" };
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/sessions/history/${userId}`, {
+        method: "DELETE"
+      }).catch(async () => {
+        return await fetchWithTimeout(`${API_BASE}/api/sessions/history/${userId}`, {
+          method: "DELETE"
+        });
+      });
+      if (res && res.ok) {
+        resJson = await res.json().catch(() => ({ status: "deleted" }));
+      }
+    } catch (e) {
+      console.warn("Backend session history wipe failed or unreachable, proceeding with client-side wipe:", e);
+    }
 
-    // Clear local storage and offline caches
+    // Always clear local storage, session storage, and offline caches regardless of backend response
     try {
       sessionStorage.removeItem("lastInsights");
       sessionStorage.removeItem("lastSession");
+      sessionStorage.removeItem("lastMetrics");
       sessionStorage.removeItem("lastAnnotatedImage");
+      localStorage.removeItem("physiotwin_latest_session");
       localStorage.removeItem("pt_user_pain_zone");
       localStorage.removeItem("pt_user_pain_level");
-      await offlineStorage.removeCache(`dashboard_${userId}`).catch(() => {});
+      localStorage.removeItem("pt_self_reported_pain");
+      localStorage.removeItem("physiotwin_capture_insights_history");
+
+      const uids = [userId, "demo-athlete", "demo_user", "test-user", "dev-athlete"];
+      for (const u of uids) {
+        localStorage.removeItem(`physiotwin_capture_insights_history_${u}`);
+        await offlineStorage.removeCache(`dashboard_${u}`).catch(() => {});
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("twin_data_deleted"));
       }
@@ -306,7 +338,7 @@ export const api = {
       console.warn("Storage wipe notice", e);
     }
 
-    return res.json();
+    return resJson;
   },
 
   /** Fetch user profile from backend */

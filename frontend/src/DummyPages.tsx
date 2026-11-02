@@ -20,6 +20,7 @@ const DEMO_ACTION_PLAN = [{ phase: "Phase 1", tasks: ["Foam roll calves", "Bande
 const isDemoMode = () => false;
 
 export function HistoryPage() {
+  const { user } = useAuth();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
@@ -27,7 +28,7 @@ export function HistoryPage() {
   useEffect(() => {
     async function fetchHistory() {
       try {
-        const uid = auth.currentUser?.uid || "test-user";
+        const uid = user?.uid || auth.currentUser?.uid || "demo-athlete";
         let data = await api.getSessionHistory(uid);
         if (!data || data.length === 0) {
           data = [
@@ -203,7 +204,7 @@ export function TimelinePage() {
         return;
       }
       try {
-        const uid = user?.uid || "test-user";
+        const uid = user?.uid || auth.currentUser?.uid || "demo-athlete";
         let data = await api.getSessionHistory(uid);
         
         if (!data || data.length < 2) {
@@ -296,40 +297,46 @@ export function TimelinePage() {
 }
 
 export function InsightsPage() {
+  const { user } = useAuth();
+  const currentUid = user?.uid || auth.currentUser?.uid || "demo-athlete";
   const [insights, setInsights] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadInsights() {
-      if (isDemoMode()) {
-        setInsights("## Biomechanical Analysis\n\nYour recent kinematic trends show a **steady improvement in right-side symmetry**, particularly during load-bearing transitions.\n\n### Core Findings\n- **Pelvic tracking** has stabilized by 14% over the last 3 sessions.\n- **Knee varus** is still present on the left side during descent. This is contributing to the minor drop in stability metrics.\n\n### Recommended Focus\nContinue eccentric quad control to improve that descent phase and protect the left knee.");
-        setLoading(false);
-        return;
-      }
       try {
-        const uid = auth.currentUser?.uid || "test-user";
         const cached = sessionStorage.getItem("lastInsights");
-        if (cached) {
+        if (cached && cached.trim().length > 0) {
           setInsights(cached);
+          setLoading(false);
+          return;
         }
-      } catch (err) {
+        setLoading(true);
+        const res = await api.getDeepInsights(currentUid);
+        if (res && res.insights) {
+          setInsights(res.insights);
+          sessionStorage.setItem("lastInsights", res.insights);
+        }
+      } catch (err: any) {
         console.error("Error loading insights", err);
+        setError(err.message || "Failed to load insights");
       } finally {
         setLoading(false);
       }
     }
     loadInsights();
-  }, []);
+  }, [currentUid]);
 
   const handleGenerate = async () => {
     setLoading(true);
     setError(null);
     try {
-      const uid = auth.currentUser?.uid || "test-user";
-      const res = await api.getDeepInsights(uid);
-      setInsights(res.insights);
-      sessionStorage.setItem("lastInsights", res.insights || "");
+      const res = await api.getDeepInsights(currentUid);
+      if (res && res.insights) {
+        setInsights(res.insights);
+        sessionStorage.setItem("lastInsights", res.insights);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to generate insights");
     } finally {
@@ -339,11 +346,31 @@ export function InsightsPage() {
 
   const renderMarkdownText = (text: string) => {
     return text.split('\n').map((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed === '---') return <hr key={i} className="my-4 border-border/60" />;
       if (line.startsWith('###')) return <h3 key={i} className="text-lg font-bold mt-4 mb-2 text-foreground">{line.replace(/###/g, '')}</h3>;
       if (line.startsWith('##')) return <h2 key={i} className="text-xl font-black mt-6 mb-3 text-foreground">{line.replace(/##/g, '')}</h2>;
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        const bulletText = trimmed.slice(2);
+        const parts = bulletText.split(/(\*\*.*?\*\*)/g);
+        return (
+          <div key={i} className="flex items-start gap-2 mb-2 ml-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
+            <p className="text-muted-foreground leading-relaxed text-sm">
+              {parts.map((part, j) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                  return <strong key={j} className="text-foreground">{part.slice(2, -2)}</strong>;
+                }
+                return part;
+              })}
+            </p>
+          </div>
+        );
+      }
+      if (!trimmed) return <div key={i} className="h-2" />;
       const parts = line.split(/(\*\*.*?\*\*)/g);
       return (
-        <p key={i} className="mb-2 text-muted-foreground leading-relaxed">
+        <p key={i} className="mb-2 text-muted-foreground leading-relaxed text-sm">
           {parts.map((part, j) => {
             if (part.startsWith('**') && part.endsWith('**')) {
               return <strong key={j} className="text-foreground">{part.slice(2, -2)}</strong>;
@@ -369,16 +396,29 @@ export function InsightsPage() {
             <p className="text-muted-foreground text-sm mt-0.5">Deep insights generated from your motion data</p>
           </div>
           {insights && (
-            <button onClick={handleGenerate} disabled={loading} className="text-xs text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50">Regenerate</button>
+            <button onClick={handleGenerate} disabled={loading} className="text-xs text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50">
+              {loading ? "Analyzing..." : "Regenerate"}
+            </button>
           )}
         </header>
 
+        {error && (
+          <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={handleGenerate} className="underline font-semibold ml-2 hover:opacity-80">Retry</button>
+          </div>
+        )}
+
         {!insights && !loading ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4 glass-panel text-center max-w-2xl mx-auto pointer-events-auto">
+            <p className="text-muted-foreground text-sm">Ready to synthesize your kinematics with your digital twin profile.</p>
             <button onClick={handleGenerate} className="btn-primary mt-2 px-8 py-3">Generate Deep Insights</button>
           </div>
         ) : loading ? (
-          <div className="flex justify-center p-12"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" /></div>
+          <div className="flex flex-col items-center justify-center p-16 gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <p className="text-xs text-muted-foreground animate-pulse">Running biomechanical intelligence engine...</p>
+          </div>
         ) : (
           <div className="space-y-6 max-w-4xl mx-auto">
             {annotatedImage && (

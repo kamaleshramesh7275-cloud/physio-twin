@@ -106,12 +106,12 @@ function CinematicCameraController({
   const { camera } = useThree();
 
   useFrame(() => {
-    let targetPos = new THREE.Vector3(0, 0.90, 3.2);
+    let targetPos = new THREE.Vector3(0, 0.98, 3.25);
     let targetLook = new THREE.Vector3(0, 0.88, 0);
 
     if (cameraFocusStation === "knee") {
-      targetPos = new THREE.Vector3(0.20, 0.52, 1.2);
-      targetLook = new THREE.Vector3(0.12, 0.48, 0.06);
+      targetPos = new THREE.Vector3(0.20, 0.58, 1.25);
+      targetLook = new THREE.Vector3(0.12, 0.50, 0.06);
     } else if (cameraFocusStation === "lumbar") {
       targetPos = new THREE.Vector3(0, 1.16, 1.3);
       targetLook = new THREE.Vector3(0, 1.12, 0.05);

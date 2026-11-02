@@ -52,6 +52,14 @@ export default defineConfig({
       '/users': {
         target: 'http://localhost:8000',
         changeOrigin: true
+      },
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/health-connect': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
       }
     }
   }
